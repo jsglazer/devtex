@@ -5,6 +5,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { ask, message, open } from '@tauri-apps/plugin-dialog';
 import type {
   FileStamp,
@@ -128,6 +129,14 @@ export const tauriShell: Shell = {
     }),
   alert: async (text, title) => {
     await message(text, { title: title ?? 'DevTex' });
+  },
+  setZoom: async (factor) => {
+    try {
+      await getCurrentWebview().setZoom(factor);
+    } catch {
+      // platform without native webview zoom: fall back to CSS zoom
+      document.documentElement.style.setProperty('zoom', String(factor));
+    }
   },
   now: () => performance.now(),
   localTime: () => {

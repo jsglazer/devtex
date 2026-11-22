@@ -113,6 +113,8 @@ export interface Shell {
   onMenu(cb: (command: string) => void): Promise<() => void>;
   confirm(text: string, opts?: ConfirmOptions): Promise<boolean>;
   alert(text: string, title?: string): Promise<void>;
+  /** Zoom the whole webview (interface zoom). */
+  setZoom(factor: number): Promise<void>;
   now(): number;
   localTime(): LocalTime;
 }

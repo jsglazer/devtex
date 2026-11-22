@@ -368,6 +368,7 @@ figcaption {
   position: relative;
   margin: 0 auto 12px;
   width: fit-content;
+  background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   cursor: crosshair;
 }
@@ -440,11 +441,45 @@ figcaption {
   width: 100%;
 }
 .dt-swatch {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  position: relative;
+  width: 28px;
+  height: 22px;
+  border-radius: 5px;
   border: 1px solid var(--border);
   flex: none;
+  overflow: hidden;
+  cursor: pointer;
+  background:
+    linear-gradient(var(--swatch, transparent), var(--swatch, transparent)),
+    repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 8px 8px;
+}
+.dt-swatch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+.dt-color-name {
+  width: 130px;
+  flex: none;
+}
+.dt-opacity {
+  width: 80px;
+  flex: none;
+}
+.dt-opacity-label {
+  width: 36px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dt-field input.invalid {
+  border-color: #d33;
 }
 .dt-pre {
   white-space: pre-wrap;
@@ -542,4 +577,21 @@ body[data-platform='ios'] #outline {
   #outline {
     display: none;
   }
+}
+
+#pdf-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+}
+#pdf-controls[hidden] {
+  display: none;
+}
+#pdf-zoom {
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }

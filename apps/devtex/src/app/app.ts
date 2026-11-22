@@ -8,6 +8,9 @@ import { insertTemplate, wrapCommand, type ProjectKnowledge } from '@devtex/cm-l
 import {
   BetterBibTexClient,
   bibLabel,
+  clampZoom,
+  formatZoom,
+  stepZoom,
   diagnose,
   dirname,
   engineOf,
@@ -163,7 +166,36 @@ export class App {
         $('status-hud').textContent = this.settings.preview.timingHud ? formatHud(t, stats) : '';
       },
     });
-    this.pdf = new PdfPane($('pdf'), (file, line) => this.jumpTo(file, line));
+    this.pdf = new PdfPane(
+      $('pdf'),
+      (file, line) => this.jumpTo(file, line),
+      (z) => {
+        $('pdf-zoom').textContent = formatZoom(z);
+      },
+    );
+    for (const b of document.querySelectorAll<HTMLElement>('#pdf-controls button')) {
+      const id = { in: 'pdf.zoomIn', out: 'pdf.zoomOut', fit: 'pdf.zoomFit' }[
+        b.dataset['pdf'] ?? ''
+      ];
+      if (id !== undefined) b.addEventListener('click', () => this.commands.run(id));
+    }
+    // ⌘+ (⇧⌘=) / ⌘− / ⌘0 when the macOS menu didn't take them (e.g. ⇧⌘=, iPad keyboards)
+    document.addEventListener('keydown', (ev) => {
+      if (ev.defaultPrevented || !(ev.metaKey || ev.ctrlKey) || ev.altKey) return;
+      const id =
+        ev.key === '+' || ev.key === '='
+          ? 'view.zoomIn'
+          : ev.key === '-'
+            ? 'view.zoomOut'
+            : ev.key === '0'
+              ? 'view.zoomReset'
+              : null;
+      if (id !== null) {
+        ev.preventDefault();
+        this.commands.run(id);
+      }
+    });
+    await this.applyZoom(this.settings.ui.zoom, false);
     this.registerCommands();
     this.renderToolbars();
     this.wireRightTabs();
@@ -258,6 +290,7 @@ export class App {
     this.configErrors = [...new Set([...this.configErrors, ...k.errors])];
     this.editor.reconfigure(this.settings, this.bindings, this.syntax);
     this.preview.setDebounce(this.settings.preview.debounceMs);
+    await this.applyZoom(this.settings.ui.zoom, false);
     this.renderToolbars();
     this.renderProblems();
   }
@@ -299,7 +332,7 @@ export class App {
       return;
     }
     this.openFile(first);
-    await this.loadExistingPdf();
+    void this.loadExistingPdf(); // never block opening on PDF rendering
     this.setStatus(
       `${this.project.name}${this.project.vaultRoot === null ? '' : ` — vault: ${this.project.vaultRelative === '' ? '/' : this.project.vaultRelative}`}`,
     );
@@ -613,6 +646,34 @@ export class App {
     for (const b of document.querySelectorAll<HTMLElement>('#right-tabs button'))
       b.classList.toggle('active', b.dataset['right'] === which);
     $('right-pane').hidden = false;
+    $('pdf-controls').hidden = which !== 'pdf';
+  }
+
+  // ---------- zoom ----------
+
+  private zoomSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Interface zoom; persisted to settings.jsonc (ui.zoom) after a short pause. */
+  private async applyZoom(z: number, persist: boolean): Promise<void> {
+    const next = clampZoom(z, 0.5, 3);
+    this.settings.ui.zoom = next;
+    await this.shell.setZoom(next);
+    if (!persist) return;
+    this.setStatus(`Zoom ${formatZoom(next)}`);
+    if (this.zoomSaveTimer !== null) clearTimeout(this.zoomSaveTimer);
+    this.zoomSaveTimer = setTimeout(() => {
+      this.zoomSaveTimer = null;
+      void this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
+    }, 800);
+  }
+
+  private zoomPdf(dir: 1 | -1 | 0): void {
+    if (!this.pdf.hasDocument()) {
+      notice('No PDF loaded yet.');
+      return;
+    }
+    this.selectRight('pdf');
+    void this.pdf.setZoom(dir === 0 ? 1 : stepZoom(this.pdf.getZoom(), dir, 0.25, 4));
   }
 
   private wireRightTabs(): void {
@@ -737,6 +798,20 @@ export class App {
         this.renderToolbars();
       },
     });
+    c.register({
+      id: 'view.zoomIn',
+      title: 'Zoom In',
+      run: () => this.applyZoom(stepZoom(this.settings.ui.zoom, 1, 0.5, 3), true),
+    });
+    c.register({
+      id: 'view.zoomOut',
+      title: 'Zoom Out',
+      run: () => this.applyZoom(stepZoom(this.settings.ui.zoom, -1, 0.5, 3), true),
+    });
+    c.register({ id: 'view.zoomReset', title: 'Actual Size', run: () => this.applyZoom(1, true) });
+    c.register({ id: 'pdf.zoomIn', title: 'Zoom PDF In', run: () => this.zoomPdf(1) });
+    c.register({ id: 'pdf.zoomOut', title: 'Zoom PDF Out', run: () => this.zoomPdf(-1) });
+    c.register({ id: 'pdf.zoomFit', title: 'Fit PDF to Width', run: () => this.zoomPdf(0) });
     c.register({ id: 'palette.open', title: 'Command Palette', run: () => this.palette() });
     c.register({
       id: 'palette.sectioning',

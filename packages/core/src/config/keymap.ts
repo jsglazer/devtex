@@ -147,6 +147,9 @@ export const DEFAULT_KEYMAP: KeyBinding[] = [
   { key: 'Mod-Shift-u', command: 'git.pushReview' },
   { key: 'Mod-Alt-u', command: 'git.submit' },
   { key: 'Mod-Alt-t', command: 'view.toggleToolbars' },
+  { key: 'Mod-=', command: 'view.zoomIn' },
+  { key: 'Mod--', command: 'view.zoomOut' },
+  { key: 'Mod-0', command: 'view.zoomReset' },
 ];
 
 export interface KeymapResult {

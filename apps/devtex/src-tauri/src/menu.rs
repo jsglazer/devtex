@@ -202,6 +202,14 @@ pub fn menu_spec() -> Vec<Submenu> {
                     Some("CmdOrCtrl+Alt+T"),
                 ),
                 Item::Separator,
+                cmd("view.zoomIn", "Zoom In", Some("CmdOrCtrl+=")),
+                cmd("view.zoomOut", "Zoom Out", Some("CmdOrCtrl+-")),
+                cmd("view.zoomReset", "Actual Size", Some("CmdOrCtrl+0")),
+                Item::Separator,
+                cmd("pdf.zoomIn", "Zoom PDF In", None),
+                cmd("pdf.zoomOut", "Zoom PDF Out", None),
+                cmd("pdf.zoomFit", "Fit PDF to Width", None),
+                Item::Separator,
                 Item::System(Fullscreen),
             ],
         },
@@ -340,5 +348,15 @@ mod tests {
             assert!(id.contains('.'), "{id}");
         }
         assert!(command_ids().contains("compile.pdf"));
+        for id in [
+            "view.zoomIn",
+            "view.zoomOut",
+            "view.zoomReset",
+            "pdf.zoomIn",
+            "pdf.zoomOut",
+            "pdf.zoomFit",
+        ] {
+            assert!(command_ids().contains(id), "{id}");
+        }
     }
 }

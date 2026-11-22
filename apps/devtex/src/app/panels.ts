@@ -104,7 +104,7 @@ export function renderToolbars(
     if (!bar.visible) continue;
     const div = el('div', { class: 'dt-toolbar', 'data-toolbar': bar.id, title: bar.title });
     for (const item of bar.items) {
-      if (!commands.has(item.command)) continue;
+      if (!commands.isAvailable(item.command)) continue;
       const b = el(
         'button',
         { title: commands.title(item.command) },

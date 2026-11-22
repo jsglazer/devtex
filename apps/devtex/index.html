@@ -21,6 +21,12 @@
           <div id="right-tabs">
             <button data-right="preview" class="active">Preview</button>
             <button data-right="pdf">PDF</button>
+            <span id="pdf-controls" hidden>
+              <button data-pdf="out" title="Zoom PDF out">−</button>
+              <span id="pdf-zoom">100%</span>
+              <button data-pdf="in" title="Zoom PDF in">+</button>
+              <button data-pdf="fit" title="Fit PDF to width">Fit</button>
+            </span>
           </div>
           <div id="preview" class="right-view"></div>
           <div id="pdf" class="right-view" hidden></div>

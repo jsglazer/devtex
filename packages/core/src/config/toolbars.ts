@@ -24,7 +24,7 @@ export const DEFAULT_TOOLBARS: Toolbar[] = [
     items: [
       { command: 'file.openProject', label: 'Open' },
       { command: 'file.save', label: 'Save' },
-      { command: 'compile.pdf', label: 'PDF' },
+      { command: 'compile.pdf', label: 'Compile' },
       { command: 'pane.togglePreview', label: 'Preview' },
       { command: 'pane.togglePdf', label: 'PDF view' },
       { command: 'pane.toggleOutline', label: 'Outline' },

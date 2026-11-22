@@ -2,8 +2,28 @@
  * Minimal settings UI (decision): editor font face, font size and highlight
  * colours only. Everything else is edited in the JSONC files.
  */
-import type { Settings } from '@devtex/core';
+import {
+  formatCssColor,
+  parseCssColor,
+  toHex6,
+  withPickedRgb,
+  type Rgba,
+  type Settings,
+} from '@devtex/core';
 import { el } from './ui.js';
+
+/** Parse any CSS colour, letting the browser resolve named colours (e.g. "gold"). */
+function resolveColor(value: string): Rgba | null {
+  const direct = parseCssColor(value);
+  if (direct !== null) return direct;
+  if (!CSS.supports('color', value)) return null;
+  const probe = document.createElement('span');
+  probe.style.color = value;
+  document.body.append(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  return parseCssColor(computed);
+}
 
 const COLOR_LABELS: Record<keyof Settings['colors'], string> = {
   currentLine: 'Current line',
@@ -24,15 +44,68 @@ export function settingsDialog(current: Settings, configDir: string): Promise<Se
       value: String(current.editor.fontSize),
     });
     const colorInputs = (Object.keys(COLOR_LABELS) as (keyof Settings['colors'])[]).map((k) => {
-      const input = el('input', { type: 'text', value: current.colors[k] });
-      const swatch = el('span', { class: 'dt-swatch', style: `background:${current.colors[k]}` });
-      input.addEventListener('input', () => {
-        swatch.style.background = input.value;
+      const input = el('input', {
+        type: 'text',
+        value: current.colors[k],
+        'aria-label': `${COLOR_LABELS[k]} (CSS colour)`,
       });
+      // Clicking the swatch opens the system colour wheel. <input type="color"> only edits
+      // #rrggbb, so the picked RGB is combined with the opacity slider into rgba().
+      const picker = el('input', {
+        type: 'color',
+        class: 'dt-swatch-input',
+        title: 'Click to pick a colour',
+      });
+      const swatch = el('span', { class: 'dt-swatch' }, picker);
+      const opacity = el('input', {
+        type: 'range',
+        min: '0',
+        max: '100',
+        step: '1',
+        class: 'dt-opacity',
+        title: 'Opacity',
+      });
+      const opacityLabel = el('span', { class: 'dt-opacity-label' });
+      const sync = (): void => {
+        const c = resolveColor(input.value);
+        if (c === null) {
+          input.classList.add('invalid');
+          return;
+        }
+        input.classList.remove('invalid');
+        picker.value = toHex6(c);
+        opacity.value = String(Math.round(c.a * 100));
+        opacityLabel.textContent = `${opacity.value}%`;
+        swatch.style.setProperty('--swatch', input.value);
+      };
+      input.addEventListener('input', sync);
+      picker.addEventListener('input', () => {
+        input.value = withPickedRgb(
+          resolveColor(input.value) === null ? '#000000' : input.value,
+          picker.value,
+        );
+        const c = resolveColor(input.value);
+        if (c !== null) input.value = formatCssColor({ ...c, a: Number(opacity.value) / 100 });
+        sync();
+      });
+      opacity.addEventListener('input', () => {
+        const c = resolveColor(input.value) ?? { r: 0, g: 0, b: 0, a: 1 };
+        input.value = formatCssColor({ ...c, a: Number(opacity.value) / 100 });
+        sync();
+      });
+      sync();
       return {
         k,
         input,
-        row: el('label', { class: 'dt-field row' }, COLOR_LABELS[k], swatch, input),
+        row: el(
+          'div',
+          { class: 'dt-field row' },
+          el('span', { class: 'dt-color-name' }, COLOR_LABELS[k]),
+          swatch,
+          opacity,
+          opacityLabel,
+          input,
+        ),
       };
     });
     const overlay = el('div', { class: 'dt-modal-overlay' });

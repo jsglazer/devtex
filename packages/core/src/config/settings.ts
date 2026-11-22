@@ -31,6 +31,10 @@ export interface Settings {
   citations: {
     betterBibTex: boolean;
   };
+  ui: {
+    /** Whole-interface zoom (⌘+ / ⌘− / ⌘0), 0.5–3. */
+    zoom: number;
+  };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   preview: { debounceMs: 120, timingHud: false },
   compile: { latexmkPath: '', badBoxes: 'none' },
   citations: { betterBibTex: true },
+  ui: { zoom: 1 },
 };
 
 export interface Loaded<T> {
@@ -123,6 +128,11 @@ export function loadSettings(text: string | null): Loaded<Settings> {
       s.editor.lineHeight < 1 || s.editor.lineHeight > 3,
       () => (s.editor.lineHeight = DEFAULT_SETTINGS.editor.lineHeight),
       'editor.lineHeight: must be 1–3',
+    ],
+    [
+      !(s.ui.zoom >= 0.5 && s.ui.zoom <= 3),
+      () => (s.ui.zoom = DEFAULT_SETTINGS.ui.zoom),
+      'ui.zoom: must be 0.5–3',
     ],
     [
       s.preview.debounceMs < 0 || s.preview.debounceMs > 2000,

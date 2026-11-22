@@ -30,6 +30,12 @@ export class CommandRegistry {
     return [...this.defs.values()].filter((d) => d.available?.() !== false);
   }
 
+  /** Registered and available on this platform. */
+  isAvailable(id: string): boolean {
+    const d = this.defs.get(id);
+    return d !== undefined && d.available?.() !== false;
+  }
+
   title(id: string): string {
     return this.defs.get(id)?.title ?? id;
   }
