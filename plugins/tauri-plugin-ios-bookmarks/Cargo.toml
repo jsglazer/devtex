@@ -1,0 +1,20 @@
+[package]
+name = "tauri-plugin-ios-bookmarks"
+version = "1.0.0"
+description = "DevTex: persist a security-scoped vault folder bookmark on iOS and do coordinated file I/O"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.85"
+links = "tauri-plugin-ios-bookmarks"
+
+[dependencies]
+tauri = { version = "2.12.7" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+base64 = "0.23"
+
+[build-dependencies]
+tauri-plugin = { version = "2.7.4", features = ["build"] }
+
+[lints]
+workspace = true

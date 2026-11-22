@@ -1,0 +1,29 @@
+% !TEX program = pdflatex
+% !DevTex git = thesis/
+\documentclass[12pt]{report}
+\usepackage{amsmath,amssymb,booktabs,graphicx,natbib,tikz}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\estimator}{$\hat{\beta}$}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\def\iid{i.i.d.}
+\title{A Fixture Dissertation}
+\author{Test Author}
+\begin{document}
+\maketitle
+\tableofcontents
+
+\include{chapters/ch1}
+\include{chapters/ch2}
+\include{chapters/ch3}
+\include{chapters/ch4}
+\include{chapters/ch5}
+\include{chapters/ch6}
+\include{chapters/ch7}
+\include{chapters/ch8}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+\end{document}

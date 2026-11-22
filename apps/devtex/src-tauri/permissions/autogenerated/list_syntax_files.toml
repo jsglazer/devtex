@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-syntax-files"
+description = "Enables the list_syntax_files command without any pre-configured scope."
+commands.allow = ["list_syntax_files"]
+
+[[permission]]
+identifier = "deny-list-syntax-files"
+description = "Denies the list_syntax_files command without any pre-configured scope."
+commands.deny = ["list_syntax_files"]

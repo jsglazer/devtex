@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-config-location"
+description = "Enables the config_location command without any pre-configured scope."
+commands.allow = ["config_location"]
+
+[[permission]]
+identifier = "deny-config-location"
+description = "Denies the config_location command without any pre-configured scope."
+commands.deny = ["config_location"]

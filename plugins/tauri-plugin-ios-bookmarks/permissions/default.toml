@@ -1,0 +1,3 @@
+[default]
+description = "Pick the vault folder and restore its bookmark"
+permissions = ["allow-pick-folder", "allow-restore-vault"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-synctex"
+description = "Enables the read_synctex command without any pre-configured scope."
+commands.allow = ["read_synctex"]
+
+[[permission]]
+identifier = "deny-read-synctex"
+description = "Denies the read_synctex command without any pre-configured scope."
+commands.deny = ["read_synctex"]

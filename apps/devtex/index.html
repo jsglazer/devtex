@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>DevTex</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="toolbars"></div>
+      <div id="main">
+        <aside id="outline" class="pane side" hidden></aside>
+        <section id="editor-pane" class="pane">
+          <div id="tabs"></div>
+          <div id="editor"></div>
+          <div id="accessory" hidden></div>
+        </section>
+        <div id="splitter"></div>
+        <section id="right-pane" class="pane">
+          <div id="right-tabs">
+            <button data-right="preview" class="active">Preview</button>
+            <button data-right="pdf">PDF</button>
+          </div>
+          <div id="preview" class="right-view"></div>
+          <div id="pdf" class="right-view" hidden></div>
+        </section>
+      </div>
+      <section id="problems" class="pane bottom" hidden></section>
+      <footer id="status">
+        <span id="status-left"></span><span id="status-hud"></span><span id="status-right"></span>
+      </footer>
+    </div>
+    <div id="modal-root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bbt-rpc"
+description = "Enables the bbt_rpc command without any pre-configured scope."
+commands.allow = ["bbt_rpc"]
+
+[[permission]]
+identifier = "deny-bbt-rpc"
+description = "Denies the bbt_rpc command without any pre-configured scope."
+commands.deny = ["bbt_rpc"]

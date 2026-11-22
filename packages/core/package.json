@@ -1,0 +1,28 @@
+{
+  "name": "@devtex/core",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./render": "./src/render/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@unified-latex/unified-latex-types": "1.8.4",
+    "@unified-latex/unified-latex-util-parse": "1.8.4",
+    "fflate": "0.8.3",
+    "jsonc-parser": "3.3.1",
+    "mathjax-full": "3.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

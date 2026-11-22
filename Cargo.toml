@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["apps/devtex/src-tauri", "plugins/tauri-plugin-ios-bookmarks"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "1.0.0"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

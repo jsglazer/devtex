@@ -1,0 +1,10 @@
+{
+  "id": "devtex",
+  "name": "DevTex",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Open and edit .tex files in Obsidian with LaTeX highlighting, environment matching and auto-\\item (companion to the DevTex app).",
+  "author": "jsglazer",
+  "authorUrl": "https://github.com/jsglazer/devtex",
+  "isDesktopOnly": false
+}

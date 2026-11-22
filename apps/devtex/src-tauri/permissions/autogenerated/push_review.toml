@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-push-review"
+description = "Enables the push_review command without any pre-configured scope."
+commands.allow = ["push_review"]
+
+[[permission]]
+identifier = "deny-push-review"
+description = "Denies the push_review command without any pre-configured scope."
+commands.deny = ["push_review"]

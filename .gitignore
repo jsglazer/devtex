@@ -1,0 +1,14 @@
+NewBuild/
+.DS_Store
+CLAUDE.md
+GEMINI.md
+.claude/
+node_modules/
+dist/
+target/
+*.tsbuildinfo
+apps/devtex/src-tauri/gen/schemas/
+coverage/
+.build/
+**/.tauri/
+plugins/**/permissions/schemas/

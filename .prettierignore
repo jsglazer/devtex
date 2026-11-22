@@ -1,0 +1,11 @@
+node_modules
+dist
+target
+NewBuild
+apps/devtex/src-tauri/gen
+pnpm-lock.yaml
+*.md
+**/.build
+plugins/**/permissions/schemas
+**/.tauri
+apps/devtex/src-tauri/gen
