@@ -12,7 +12,7 @@
 import type * as Ast from '@unified-latex/unified-latex-types';
 import { getParser } from '@unified-latex/unified-latex-util-parse';
 import type { SourceBlock } from '../blocks.js';
-import { expandMacroBody, toParserSignatures, type MacroSet } from '../macros.js';
+import { expandMacroBody, toParserSignatures, type MacroSet, type TitleMeta } from '../macros.js';
 import { escapeHtml } from '../text.js';
 
 export const LINE_OPEN = '\u0001';
@@ -86,6 +86,12 @@ const EXTRA_SIGNATURES: Record<string, { signature: string }> = {
   note: { signature: 'o m' },
   column: { signature: 'd<> o m' },
   textcolor: { signature: 'o m m' },
+  title: { signature: 'o m' },
+  subtitle: { signature: 'o m' },
+  author: { signature: 'o m' },
+  institute: { signature: 'o m' },
+  date: { signature: 'o m' },
+  inst: { signature: 'm' },
 };
 
 /** Beamer environment signatures (overlay specs, frame options, block titles). */
@@ -289,7 +295,6 @@ const IGNORED = new Set([
   'cleardoublepage',
   'pagebreak',
   'nopagebreak',
-  'maketitle',
   'bibliographystyle',
   'addbibresource',
   'label',
@@ -501,7 +506,42 @@ class BlockRenderer {
     private readonly parser: Parser,
     private readonly lineOffset: number,
     private readonly depth: number,
+    private readonly meta: TitleMeta = {},
   ) {}
+
+  /** Render TeX source that is not part of this block (macro bodies, title fields). */
+  private renderSub(src: string, line: number): string {
+    const ast = this.parser.parse(src);
+    const sub = new BlockRenderer(src, this.macros, this.parser, line, this.depth + 1, this.meta);
+    const html = sub.renderNodes(ast.content);
+    const base = this.math.length;
+    for (const job of sub.math) this.math.push(job);
+    this.unsupported += sub.unsupported;
+    // renumber the sub-renderer's math slots into this block's slot space
+    return html.replace(
+      new RegExp(`${MATH_OPEN}(\\d+)${MATH_CLOSE}`, 'g'),
+      (_m, d: string) => `${MATH_OPEN}${base + Number(d)}${MATH_CLOSE}`,
+    );
+  }
+
+  /** \titlepage / \maketitle from the collected \title, \author, … fields. */
+  private renderTitlePage(n: Ast.Macro): string {
+    const line = this.relLine(n);
+    const m = this.meta;
+    const field = (key: keyof TitleMeta, tag: string): string => {
+      const v = m[key];
+      return v === undefined || v.trim() === ''
+        ? ''
+        : `<${tag} class="dt-tp-${key}">${this.renderSub(v, line)}</${tag}>`;
+    };
+    const body =
+      field('title', 'div') +
+      field('subtitle', 'div') +
+      field('author', 'div') +
+      field('institute', 'div') +
+      field('date', 'div');
+    return `<div class="dt-titlepage" data-source-line="${lineMarker(line)}">${body === '' ? '<div class="dt-tp-title">Title page</div><div class="dt-tp-date">(no \\title set)</div>' : body}</div>`;
+  }
 
   private relLine(node: Ast.Node | undefined): number {
     const l = node?.position?.start.line;
@@ -695,9 +735,11 @@ class BlockRenderer {
     if (name === 'frame') {
       return `<section class="dt-frame" data-source-line="${lineMarker(this.relLine(n))}"><div class="dt-frame-body">${this.renderNodes(lastMandatory(n)?.content ?? [])}</div></section>`;
     }
-    if (name === 'titlepage') {
-      return `<div class="dt-titlepage" data-source-line="${lineMarker(this.relLine(n))}">Title page</div>`;
-    }
+    if (name === 'titlepage' || name === 'maketitle') return this.renderTitlePage(n);
+    // title-page fields are collected project-wide and shown by \titlepage/\maketitle
+    if (/^(title|subtitle|author|institute|date)$/.test(name)) return '';
+    if (name === 'and') return '<span class="dt-tp-and"></span>';
+    if (name === 'inst') return `<sup>${this.renderNodes(lastMandatory(n)?.content ?? [])}</sup>`;
     if (name === 'alert') {
       return `<span class="dt-alert">${this.renderNodes(lastMandatory(n)?.content ?? [])}</span>`;
     }
@@ -728,26 +770,7 @@ class BlockRenderer {
       if (def.optionalDefault !== undefined && (args[0] === undefined || args[0] === '')) {
         args[0] = def.optionalDefault;
       }
-      const expanded = expandMacroBody(def, args);
-      const ast = this.parser.parse(expanded);
-      const sub = new BlockRenderer(
-        expanded,
-        this.macros,
-        this.parser,
-        this.relLine(n),
-        this.depth + 1,
-      );
-      const html = sub.renderNodes(ast.content);
-      for (const job of sub.math) {
-        this.math.push(job);
-      }
-      this.unsupported += sub.unsupported;
-      // renumber the sub-renderer's math slots into this block's slot space
-      const base = this.math.length - sub.math.length;
-      return html.replace(
-        new RegExp(`${MATH_OPEN}(\\d+)${MATH_CLOSE}`, 'g'),
-        (_m, d: string) => `${MATH_OPEN}${base + Number(d)}${MATH_CLOSE}`,
-      );
+      return this.renderSub(expandMacroBody(def, args), this.relLine(n));
     }
     return this.placeholder(this.sourceOf(n), n, false);
   }
@@ -981,8 +1004,9 @@ export function renderBlockTemplate(
   macros: MacroSet,
   parser: Parser,
   ast: Ast.Root = parser.parse(block.text),
+  meta: TitleMeta = {},
 ): BlockTemplate {
-  const r = new BlockRenderer(block.text, macros, parser, 0, 0);
+  const r = new BlockRenderer(block.text, macros, parser, 0, 0, meta);
   const body = r.renderNodes(ast.content);
   const lastRel = block.endLine - block.startLine;
   const html = `<div class="dt-block ${BLOCK_CLASS[block.kind] ?? ''}" data-source-file="${escapeHtml(block.file)}" data-source-line="${lineMarker(0)}" data-source-end-line="${lineMarker(lastRel)}">${body}</div>`;

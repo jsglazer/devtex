@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { latexCompletionSource, toSnippet, type ProjectKnowledge } from './assist.js';
 import { autoItemEnter, insertTemplate, wrapCommand, type CommandTarget } from './commands.js';
 import { compileRules, customDecorations } from './custom-syntax.js';
+import { envRename } from './env-rename.js';
 import { latexSyntax } from './language.js';
 import { structure, structureDecorations, structureField } from './structure.js';
 
@@ -136,5 +137,55 @@ describe('custom syntax rules', () => {
     });
     expect(found.map((x) => doc.slice(x[0], x[1]))).toEqual(['TODO', '<-', 'TODO']);
     expect(found[1]?.[2]).toBe('cm-dt-syn-r-assign');
+  });
+});
+
+describe('linked environment rename', () => {
+  const make = (doc: string): EditorState =>
+    EditorState.create({ doc, extensions: [structure(), envRename()] });
+  const doc = '\\begin{enumerate}\n\\item a\n\\end{enumerate}';
+
+  it('renames \\end when the \\begin name is replaced', () => {
+    const st = make(doc);
+    const from = doc.indexOf('enumerate');
+    const tr = st.update({
+      changes: { from, to: from + 'enumerate'.length, insert: 'itemize' },
+      userEvent: 'input.type',
+    });
+    expect(tr.state.doc.toString()).toBe('\\begin{itemize}\n\\item a\n\\end{itemize}');
+  });
+
+  it('renames \\begin when typing into the \\end name, char by char', () => {
+    let st = make(doc);
+    const at = doc.lastIndexOf('enumerate') + 'enumerate'.length;
+    st = st.update({ changes: { from: at, insert: 'x' }, userEvent: 'input.type' }).state;
+    const e = st.doc.toString().lastIndexOf('enumeratex');
+    st = st.update({
+      changes: { from: e, to: e + 1 },
+      userEvent: 'delete.backward',
+    }).state;
+    expect(st.doc.toString()).toBe('\\begin{numeratex}\n\\item a\n\\end{numeratex}');
+  });
+
+  it('leaves programmatic and out-of-tag edits alone', () => {
+    const st = make(doc);
+    const from = doc.indexOf('enumerate');
+    const t1 = st.update({ changes: { from, to: from + 1, insert: 'E' } });
+    expect(t1.state.doc.toString()).toContain('\\end{enumerate}');
+    const a = doc.indexOf(' a') + 1;
+    const t2 = st.update({ changes: { from: a, insert: 'b' }, userEvent: 'input.type' });
+    expect(t2.state.doc.toString()).toBe('\\begin{enumerate}\n\\item ba\n\\end{enumerate}');
+  });
+
+  it('one undo-able transaction carries both edits', () => {
+    const st = make(doc);
+    const from = doc.indexOf('enumerate');
+    const tr = st.update({
+      changes: { from, to: from + 'enumerate'.length, insert: 'itemize' },
+      userEvent: 'input.type',
+    });
+    let n = 0;
+    tr.changes.iterChanges(() => n++);
+    expect(n).toBe(2);
   });
 });

@@ -160,7 +160,9 @@ export function parseSyncTex(body: string): SyncTexData {
         line: lineNumber,
         left: Number(m[4]) / unit,
         bottom: Number(m[5]) / unit,
-        height: currentElement.height,
+        // inside a vertical list (glue/kern between paragraphs, \end{frame} …) the
+        // parent's height is the whole vbox, often a full page: treat the node as a point
+        height: currentElement.type === 'vertical' ? 0 : currentElement.height,
         width: m[7] !== undefined && m[7] !== '' ? Number(m[7]) / unit : undefined,
         page: currentPage.page,
       };

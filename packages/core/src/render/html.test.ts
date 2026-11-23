@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { splitBlocks } from '../blocks.js';
-import { collectMacros } from '../macros.js';
+import { collectMacros, collectTitleMeta } from '../macros.js';
 import { IncrementalRenderer, materializeLines } from './incremental.js';
 import {
   columnWidth,
@@ -198,6 +198,23 @@ describe('beamer', () => {
     expect(t).toContain('<section class="dt-frame"');
     expect(t).toContain('dt-titlepage');
     expect(t).not.toContain('dt-unsupported');
+  });
+
+  it('renders \\titlepage and \\maketitle from the collected title fields', () => {
+    const [block] = splitBlocks('a.tex', '\\begin{frame}[plain]\n\\titlepage\n\\end{frame}');
+    if (!block) throw new Error('no block');
+    const macros = collectMacros([]);
+    const meta = collectTitleMeta([
+      '\\title[Short]{State Polarization}\\subtitle{Why}\\author{A \\and B}\\institute{Uni}\\date{2026}',
+    ]);
+    const h = renderBlockTemplate(block, macros, makeParser(macros), undefined, meta).html;
+    expect(h).toContain('<div class="dt-tp-title">State Polarization</div>');
+    expect(h).toContain('<div class="dt-tp-subtitle">Why</div>');
+    expect(h).toMatch(/<div class="dt-tp-author">A\s*<span class="dt-tp-and"><\/span>\s*B<\/div>/);
+    expect(h).toContain('<div class="dt-tp-institute">Uni</div>');
+    expect(h).toContain('<div class="dt-tp-date">2026</div>');
+    expect(h).not.toContain('dt-unsupported');
+    expect(render('\\title{X}\\maketitle')).toContain('dt-titlepage');
   });
 
   it('columnWidth handles relative widths only', () => {

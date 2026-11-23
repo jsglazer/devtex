@@ -21,11 +21,19 @@
           <div id="right-tabs">
             <button data-right="preview" class="active">Preview</button>
             <button data-right="pdf">PDF</button>
-            <span id="pdf-controls" hidden>
-              <button data-pdf="out" title="Zoom PDF out">−</button>
-              <span id="pdf-zoom">100%</span>
-              <button data-pdf="in" title="Zoom PDF in">+</button>
-              <button data-pdf="fit" title="Fit PDF to width">Fit</button>
+            <span id="view-controls">
+              <button
+                id="scroll-lock"
+                title="Scroll Lock: scroll the Preview/PDF along with the editor"
+                aria-pressed="false"
+              >
+                Scroll Lock
+              </button>
+              <span class="dt-tb-sep" aria-hidden="true"></span>
+              <button data-zoom="out" title="Zoom out">−</button>
+              <span id="view-zoom">100%</span>
+              <button data-zoom="in" title="Zoom in">+</button>
+              <button data-zoom="fit" id="pdf-fit" title="Fit PDF to width" hidden>Fit</button>
             </span>
           </div>
           <div id="preview" class="right-view"></div>

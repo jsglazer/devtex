@@ -23,6 +23,7 @@ interface PageView {
   wrap: HTMLElement;
   scale: number;
   heightPt: number;
+  widthPt: number;
   /** Layout generation whose canvas is drawn (-1 = not yet). */
   renderedGen: number;
 }
@@ -173,7 +174,7 @@ export class PdfPane {
       wrap.style.width = `${Math.floor(size.w * scale)}px`;
       wrap.style.height = `${Math.floor(size.h * scale)}px`;
       frag.append(wrap);
-      const pv: PageView = { wrap, scale, heightPt: size.h, renderedGen: -1 };
+      const pv: PageView = { wrap, scale, heightPt: size.h, widthPt: size.w, renderedGen: -1 };
       wrap.addEventListener('click', (ev) => this.onClick(ev, idx + 1, pv));
       return pv;
     });
@@ -242,25 +243,66 @@ export class PdfPane {
   /**
    * Source -> PDF: scroll to and highlight (file, line). Returns false without
    * SyncTeX data. `quiet` (cursor-follow): only scroll when the target is off
-   * screen. Scrolls this pane only, never its ancestors.
+   * screen; `scroll: false` (scroll lock) only moves the highlight. Scrolls this
+   * pane only, never its ancestors.
    */
-  reveal(relFile: string, line: number, opts: { quiet?: boolean } = {}): boolean {
+  reveal(relFile: string, line: number, opts: { quiet?: boolean; scroll?: boolean } = {}): boolean {
     if (this.synctex === null) return false;
     const loc = syncToPdf(this.synctex, this.toAbs(relFile), line, this.baseDir);
     if (!loc) return false;
     const pv = this.pages[loc.page - 1];
     if (!pv) return false;
     this.drawMarker(pv, loc.page, loc.x, loc.y, loc.rect ?? null);
-    if (this.overlay) scrollWithin(this.container, this.overlay, opts.quiet === true);
+    if (this.overlay && opts.scroll !== false)
+      scrollWithin(this.container, this.overlay, opts.quiet === true);
     return true;
   }
 
-  private drawMarker(pv: PageView, page: number, x: number, y: number, r: Rect | null): void {
-    this.marker = { page, x, y, rect: r };
+  /**
+   * Scroll-lock: put the PDF position of (file, line) at the top of the pane
+   * without drawing a highlight. Instant (no smooth scroll) so it tracks the editor.
+   */
+  scrollToSource(relFile: string, line: number): void {
+    if (this.synctex === null) return;
+    const loc = syncToPdf(this.synctex, this.toAbs(relFile), Math.floor(line), this.baseDir);
+    const pv = loc ? this.pages[loc.page - 1] : undefined;
+    if (!loc || !pv) return;
+    // interpolate toward the next line on the same page so scrolling is smooth
+    const whole = Math.floor(line);
+    const next = syncToPdf(this.synctex, this.toAbs(relFile), whole + 1, this.baseDir);
+    let y = loc.y;
+    const r = loc.rect;
+    if (r && r.bottom - r.top >= pv.heightPt / 3) {
+      y = 14; // whole-page box (a Beamer frame): show the slide from its top
+    } else if (next && next.page === loc.page && next.y > loc.y) {
+      y += (next.y - loc.y) * (line - whole);
+    }
+    const c = this.container;
+    const top = pv.wrap.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop;
+    c.scrollTop = Math.max(0, top + (y - 14) * pv.scale - 24);
+  }
+
+  private drawMarker(pv: PageView, page: number, x: number, y: number, r0: Rect | null): void {
+    this.marker = { page, x, y, rect: r0 };
     this.overlay?.remove();
     const o = document.createElement('div');
     o.className = 'dt-pdf-highlight';
-    if (r !== null && r.right > r.left && r.bottom > r.top && r.right < 2e15) {
+    // clamp to the page: SyncTeX boxes can overrun it (page-high vboxes, margins)
+    const r =
+      r0 === null
+        ? null
+        : {
+            left: Math.max(0, r0.left),
+            top: Math.max(0, r0.top),
+            right: Math.min(pv.widthPt, r0.right),
+            bottom: Math.min(pv.heightPt, r0.bottom),
+          };
+    const tall = r !== null && r.bottom - r.top >= pv.heightPt / 3;
+    if (tall) {
+      // a box this tall is a container, not a line. Beamer records a whole frame
+      // against its \end{frame} line, so the honest answer is "this slide".
+      o.classList.add('dt-pdf-highlight-page');
+    } else if (r !== null && r.right > r.left + 2 && r.bottom > r.top) {
       o.style.left = `${r.left * pv.scale}px`;
       o.style.top = `${r.top * pv.scale}px`;
       o.style.width = `${(r.right - r.left) * pv.scale}px`;
@@ -268,7 +310,7 @@ export class PdfPane {
     } else {
       o.style.left = '0';
       o.style.right = '0';
-      o.style.top = `${(y - 10) * pv.scale}px`;
+      o.style.top = `${Math.max(0, Math.min(pv.heightPt - 14, y - 10)) * pv.scale}px`;
       o.style.height = `${14 * pv.scale}px`;
       void x;
     }

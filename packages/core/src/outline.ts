@@ -4,11 +4,12 @@
  */
 import { lineOfOffset, lineStarts, maskNonCode } from './text.js';
 
-export type OutlineKind = 'section' | 'figure' | 'table' | 'label';
+export type OutlineKind = 'section' | 'frame' | 'figure' | 'table' | 'label';
 
 export interface OutlineItem {
   kind: OutlineKind;
-  /** Sectioning depth (0 = part … 6 = subparagraph); 7 for floats/labels. */
+  /** Sectioning depth (0 = part … 6 = subparagraph); frames sit one below
+   * the enclosing section; 7 for floats/labels. */
   level: number;
   title: string;
   file: string;
@@ -45,10 +46,23 @@ export function outlineOf(file: string, text: string): OutlineItem[] {
   const starts = lineStarts(text);
   const items: OutlineItem[] = [];
   const re =
-    /\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\s*(\[[^\]]*\])?\s*(?=\{)|\\begin\s*\{(figure\*?|table\*?)\}|\\label\s*\{([^}]*)\}/g;
+    /\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\s*(\[[^\]]*\])?\s*(?=\{)|\\begin\s*\{(figure\*?|table\*?)\}|\\label\s*\{([^}]*)\}|\\begin\s*\{frame\}|\\frame(?![A-Za-z@])/g;
+  let sectionLevel = 1; // frames nest one level below the latest section
   for (const m of masked.matchAll(re)) {
     const line = lineOfOffset(starts, m.index);
+    const isFrameEnv = /^\\begin\s*\{frame\}$/.test(m[0]);
+    if (isFrameEnv || m[0] === '\\frame') {
+      items.push({
+        kind: 'frame',
+        level: Math.min(sectionLevel + 1, 6),
+        title: frameTitle(text, masked, m.index + m[0].length, !isFrameEnv) ?? 'Frame',
+        file,
+        line,
+      });
+      continue;
+    }
     if (m[1] !== undefined) {
+      sectionLevel = SECTION_DEPTH[m[1]] ?? 2;
       const title = readBraced(text, m.index + m[0].length) ?? '';
       items.push({
         kind: 'section',
@@ -73,6 +87,48 @@ export function outlineOf(file: string, text: string): OutlineItem[] {
     }
   }
   return items;
+}
+
+/**
+ * Title of a Beamer frame starting at `i` (just after `\begin{frame}` or
+ * `\frame`): skips overlay specs `<…>` and options `[…]`, then takes a
+ * `{Title}` argument, else the first `\frametitle{…}` in the frame body.
+ * For the `\frame{…}` command form the braced group is the body.
+ */
+function frameTitle(text: string, masked: string, i: number, commandForm = false): string | null {
+  const skip = (): void => {
+    while (i < masked.length && /\s/.test(masked[i] ?? '')) i++;
+  };
+  skip();
+  for (;;) {
+    const open = masked[i];
+    const close = open === '<' ? '>' : open === '[' ? ']' : null;
+    if (close === null) break;
+    const end = masked.indexOf(close, i);
+    if (end === -1) break;
+    i = end + 1;
+    skip();
+  }
+  const clean = (t: string): string => t.replace(/\s+/g, ' ').trim();
+  if (!commandForm && masked[i] === '{') {
+    const t = readBraced(text, i);
+    if (t !== null && clean(t) !== '') return clean(t);
+  }
+  // \frame{…}: the braced group is the body; \begin{frame}: up to \end{frame}
+  const group = commandForm ? readBraced(masked, i) : null;
+  const endIdx = commandForm
+    ? group === null
+      ? i
+      : i + group.length + 2
+    : masked.indexOf('\\end{frame}', i);
+  const body = masked.slice(i, endIdx === -1 ? undefined : endIdx);
+  const ft = /\\frametitle\s*(<[^>]*>)?\s*(\[[^\]]*\])?\s*\{/.exec(body);
+  if (ft) {
+    const t = readBraced(text, i + ft.index + ft[0].length - 1);
+    if (t !== null) return clean(t);
+  }
+  if (/\\titlepage(?![A-Za-z@])/.test(body)) return 'Title page';
+  return null;
 }
 
 export function projectOutline(

@@ -10,12 +10,14 @@ import type { SyntaxDefinition } from '@devtex/core';
 import { latexAssist, type ProjectKnowledge } from './assist.js';
 import { autoItemEnter } from './commands.js';
 import { customSyntax } from './custom-syntax.js';
+import { envRename } from './env-rename.js';
 import { latexSyntax } from './language.js';
 import { structure } from './structure.js';
 
 export * from './assist.js';
 export * from './commands.js';
 export * from './custom-syntax.js';
+export * from './env-rename.js';
 export * from './language.js';
 export * from './structure.js';
 
@@ -28,6 +30,7 @@ export function latex(opts: LatexOptions = {}): Extension {
   return [
     latexSyntax(),
     structure(),
+    envRename(),
     Prec.high(keymap.of([{ key: 'Enter', run: autoItemEnter }])),
     opts.knowledge !== undefined ? latexAssist(opts.knowledge) : [],
     opts.syntax !== undefined && opts.syntax.length > 0 ? customSyntax(opts.syntax) : [],

@@ -134,6 +134,11 @@ pub fn menu_spec() -> Vec<Submenu> {
                     "Select Next Occurrence",
                     Some("CmdOrCtrl+D"),
                 ),
+                Item::Separator,
+                // no accelerator: the shortcut (default Ctrl+Opt+↑/↓) lives in
+                // keymap.json so the user can remap it
+                cmd("edit.moveLineUp", "Move Line Up", None),
+                cmd("edit.moveLineDown", "Move Line Down", None),
             ],
         },
         Submenu {
@@ -211,6 +216,12 @@ pub fn menu_spec() -> Vec<Submenu> {
                     "Show/Hide Preamble",
                     Some("CmdOrCtrl+Alt+P"),
                 ),
+                cmd(
+                    "view.toggleWordWrap",
+                    "Toggle Word Wrap",
+                    Some("CmdOrCtrl+Alt+W"),
+                ),
+                cmd("view.toggleScrollLock", "Toggle Scroll Lock", None),
                 Item::Separator,
                 cmd("view.zoomIn", "Zoom In", Some("CmdOrCtrl+=")),
                 cmd("view.zoomOut", "Zoom Out", Some("CmdOrCtrl+-")),
@@ -360,6 +371,10 @@ mod tests {
         assert!(command_ids().contains("compile.pdf"));
         assert!(command_ids().contains("file.openRecent"));
         assert!(command_ids().contains("view.togglePreamble"));
+        assert!(command_ids().contains("view.toggleWordWrap"));
+        assert!(command_ids().contains("view.toggleScrollLock"));
+        assert!(command_ids().contains("edit.moveLineUp"));
+        assert!(command_ids().contains("edit.moveLineDown"));
         for id in [
             "view.zoomIn",
             "view.zoomOut",

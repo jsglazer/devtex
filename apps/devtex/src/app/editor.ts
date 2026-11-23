@@ -11,6 +11,8 @@ import {
   history,
   historyKeymap,
   indentWithTab,
+  moveLineDown,
+  moveLineUp,
   toggleComment,
 } from '@codemirror/commands';
 import {
@@ -72,6 +74,8 @@ export const CM_COMMANDS: Record<string, (v: EditorView) => boolean> = {
   'edit.selectNextOccurrence': selectNextOccurrence,
   'edit.addCursorAbove': addCursorAbove,
   'edit.addCursorBelow': addCursorBelow,
+  'edit.moveLineUp': moveLineUp,
+  'edit.moveLineDown': moveLineDown,
 };
 
 export function themeFor(s: Settings): Extension {
@@ -158,7 +162,7 @@ export class SourceEditor {
         indentWithTab,
       ]),
       this.theme.of(themeFor(this.settings)),
-      this.wrap.of(this.settings.editor.lineWrapping ? EditorView.lineWrapping : []),
+      this.wrap.of(this.wrapExtension()),
       EditorView.updateListener.of((u) => {
         if (this.suppress || this.current === '') return;
         if (u.docChanged) this.host.onChange(this.current, u.state.doc.toString());
@@ -166,6 +170,16 @@ export class SourceEditor {
           this.host.onCursor(this.current, u.state.doc.lineAt(u.state.selection.main.head).number);
       }),
     ];
+  }
+
+  private wrapExtension(): Extension {
+    return this.settings.editor.lineWrapping ? EditorView.lineWrapping : [];
+  }
+
+  /** Turn soft word wrap on/off for every open file (keeps undo history). */
+  setLineWrapping(on: boolean): void {
+    this.settings.editor.lineWrapping = on;
+    this.view.dispatch({ effects: this.wrap.reconfigure(this.wrapExtension()) });
   }
 
   get path(): string {
@@ -182,6 +196,8 @@ export class SourceEditor {
     this.current = path;
     this.suppress = true;
     this.view.setState(st);
+    // a cached state may predate a word-wrap toggle
+    this.view.dispatch({ effects: this.wrap.reconfigure(this.wrapExtension()) });
     this.suppress = false;
   }
 
@@ -234,6 +250,21 @@ export class SourceEditor {
     return true;
   }
 
+  /**
+   * Line at the top of the visible editor area, fractional: 12.5 means half
+   * way through line 12 (wrapped lines count by height).
+   */
+  topLine(): number {
+    const v = this.view;
+    // distance from the top of the document to the top of the visible area
+    const h = Math.max(0, v.scrollDOM.getBoundingClientRect().top - v.documentTop);
+    const block = v.lineBlockAtHeight(h);
+    const n = v.state.doc.lineAt(block.from).number;
+    return (
+      n + (block.height > 0 ? Math.min(0.999, Math.max(0, (h - block.top) / block.height)) : 0)
+    );
+  }
+
   cursorLine(): number {
     return this.view.state.doc.lineAt(this.view.state.selection.main.head).number;
   }
@@ -251,7 +282,7 @@ export class SourceEditor {
         this.theme.reconfigure(themeFor(settings)),
         this.keys.reconfigure(keymap.of(this.userKeymap())),
         this.lang.reconfigure(latex({ knowledge: this.host.knowledge, syntax })),
-        this.wrap.reconfigure(settings.editor.lineWrapping ? EditorView.lineWrapping : []),
+        this.wrap.reconfigure(this.wrapExtension()),
       ],
     });
     this.states.clear();

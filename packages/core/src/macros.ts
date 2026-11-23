@@ -184,3 +184,39 @@ export function toParserSignatures(set: MacroSet): Record<string, { signature: s
 export function expandMacroBody(def: MacroDef, args: readonly string[]): string {
   return def.body.replace(/#([1-9])/g, (_m, d: string) => args[Number(d) - 1] ?? '');
 }
+
+/** Title-page fields (raw TeX) from \title, \subtitle, \author, \institute and \date. */
+export interface TitleMeta {
+  title?: string;
+  subtitle?: string;
+  author?: string;
+  institute?: string;
+  date?: string;
+}
+
+export const TITLE_FIELDS = ['title', 'subtitle', 'author', 'institute', 'date'] as const;
+
+/**
+ * Collect title-page fields across texts (preamble first, later wins). The
+ * optional short form (`\title[Short]{Long}`) is skipped; the long form is kept.
+ */
+export function collectTitleMeta(texts: readonly string[]): TitleMeta {
+  const meta: TitleMeta = {};
+  for (const text of texts) {
+    const masked = maskNonCode(text);
+    for (const m of masked.matchAll(/\\(title|subtitle|author|institute|date)(?![A-Za-z@])/g)) {
+      let i = skipWs(masked, m.index + m[0].length);
+      const opt = readBracket(masked, i);
+      if (opt) i = skipWs(masked, opt.end);
+      const g = readGroup(masked, i);
+      if (!g) continue;
+      meta[m[1] as keyof TitleMeta] = text.slice(i + 1, g.end - 1);
+    }
+  }
+  return meta;
+}
+
+/** Stable hash of title metadata, used in cache keys. */
+export function titleMetaHash(meta: TitleMeta): string {
+  return hashString(TITLE_FIELDS.map((f) => meta[f] ?? '\u0000').join('\u0001'));
+}

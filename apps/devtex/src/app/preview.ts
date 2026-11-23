@@ -232,6 +232,28 @@ export class PreviewPane {
     if (scroll) scrollWithin(this.opts.container, target, true);
   }
 
+  /**
+   * Scroll-lock: align the preview with editor line `line` (fractional; the
+   * part after the point is the position inside that line) at the top of the
+   * pane, interpolating inside the block that holds it. Instant, no highlight.
+   */
+  scrollToLine(file: string, line: number): void {
+    const whole = Math.floor(line);
+    const span = findBlockForLine(this.spans, file, whole);
+    const block = span ? this.blocks.get(span.id) : undefined;
+    if (!span || !block) return;
+    const lines = Math.max(1, span.endLine - span.startLine + 1);
+    const frac = Math.min(1, Math.max(0, (line - span.startLine) / lines));
+    const c = this.opts.container;
+    const top = block.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop;
+    c.scrollTop = Math.max(0, top + frac * block.offsetHeight - 16);
+  }
+
+  /** Preview text zoom (1 = 100%). */
+  setZoom(z: number): void {
+    this.opts.container.style.fontSize = `${Math.round(16 * z * 10) / 10}px`;
+  }
+
   setDebounce(ms: number): void {
     this.debouncer.flush();
     this.debouncer = new Debouncer(browserScheduler, ms, () => this.flush());

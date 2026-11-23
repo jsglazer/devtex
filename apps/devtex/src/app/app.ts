@@ -56,6 +56,7 @@ import { PreviewPane } from './preview.js';
 import { pushReview, submitVersion, type PushDeps } from './push-flow.js';
 import { ProjectSession } from './session.js';
 import { settingsDialog } from './settings-ui.js';
+import { initSplitter } from './split.js';
 import {
   conflictDialog,
   confirmDialog,
@@ -108,6 +109,15 @@ export class App {
   private compiling = false;
   /** Recently opened project folders, newest first (recent.json, macOS only). */
   private recent: string[] = [];
+  /** Scroll Lock: the Preview/PDF follows the editor's scroll position. */
+  private scrollLock = localStorage.getItem('devtex.scrollLock') === '1';
+  private scrollFrame: number | null = null;
+  /** Live preview text zoom (1 = 100%), persisted in localStorage. */
+  private previewZoom = clampZoom(
+    Number(localStorage.getItem('devtex.previewZoom') ?? '1'),
+    0.5,
+    3,
+  );
 
   constructor(private readonly shell: Shell) {
     this.session = new ProjectSession(
@@ -178,16 +188,29 @@ export class App {
     this.pdf = new PdfPane(
       $('pdf'),
       (file, line) => this.jumpTo(file, line),
-      (z) => {
-        $('pdf-zoom').textContent = formatZoom(z);
-      },
+      () => this.updateZoomLabel(),
     );
-    for (const b of document.querySelectorAll<HTMLElement>('#pdf-controls button')) {
-      const id = { in: 'pdf.zoomIn', out: 'pdf.zoomOut', fit: 'pdf.zoomFit' }[
-        b.dataset['pdf'] ?? ''
-      ];
-      if (id !== undefined) b.addEventListener('click', () => this.commands.run(id));
+    this.preview.setZoom(this.previewZoom);
+    // + / − / Fit on the right of the Preview/PDF tab bar act on the view that is showing
+    for (const b of document.querySelectorAll<HTMLElement>('#view-controls [data-zoom]')) {
+      const z = b.dataset['zoom'];
+      b.addEventListener('mousedown', (ev) => ev.preventDefault()); // keep editor focus
+      b.addEventListener('click', () => {
+        const pdf = this.rightView() === 'pdf';
+        if (z === 'fit') this.commands.run('pdf.zoomFit');
+        else if (z === 'in') this.commands.run(pdf ? 'pdf.zoomIn' : 'preview.zoomIn');
+        else if (z === 'out') this.commands.run(pdf ? 'pdf.zoomOut' : 'preview.zoomOut');
+      });
     }
+    const lock = $('scroll-lock');
+    lock.addEventListener('mousedown', (ev) => ev.preventDefault());
+    lock.addEventListener('click', () => this.commands.run('view.toggleScrollLock'));
+    this.renderScrollLock();
+    this.editor.view.scrollDOM.addEventListener('scroll', () => this.onEditorScroll(), {
+      passive: true,
+    });
+    initSplitter($('splitter'), $('editor-pane'), $('right-pane'));
+    this.updateZoomLabel();
     // ⌘+ (⇧⌘=) / ⌘− / ⌘0 when the macOS menu didn't take them (e.g. ⇧⌘=, iPad keyboards)
     document.addEventListener('keydown', (ev) => {
       if (ev.defaultPrevented || !(ev.metaKey || ev.ctrlKey) || ev.altKey) return;
@@ -426,13 +449,47 @@ export class App {
     this.maybeQueryZotero();
   }
 
-  /** Editor -> right pane: follow the cursor in whichever view (Live or PDF) is showing. */
+  /**
+   * Editor -> right pane: follow the cursor in whichever view (Live or PDF) is
+   * showing. With Scroll Lock on, the view position follows the editor's
+   * scrolling instead, so the cursor only moves the highlight.
+   */
   private onCursor(path: string, line: number): void {
     if (this.syncTimer !== null) clearTimeout(this.syncTimer);
     this.syncTimer = setTimeout(() => {
-      if (this.rightView() === 'pdf') this.pdf.reveal(path, line, { quiet: true });
-      else this.preview.reveal(path, line);
+      const scroll = !this.scrollLock;
+      if (this.rightView() === 'pdf') this.pdf.reveal(path, line, { quiet: true, scroll });
+      else this.preview.reveal(path, line, scroll);
     }, 150);
+  }
+
+  /** Scroll Lock: keep the Preview/PDF aligned with the editor's top visible line. */
+  private onEditorScroll(): void {
+    if (!this.scrollLock || this.scrollFrame !== null) return;
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = null;
+      this.syncScroll();
+    });
+  }
+
+  private syncScroll(): void {
+    const path = this.editor.path;
+    if (path === '') return;
+    const line = this.editor.topLine();
+    const view = this.rightView();
+    if (view === 'pdf') this.pdf.scrollToSource(path, line);
+    else if (view === 'preview') this.preview.scrollToLine(path, line);
+  }
+
+  private renderScrollLock(): void {
+    const b = $('scroll-lock');
+    b.setAttribute('aria-pressed', String(this.scrollLock));
+    b.textContent = this.scrollLock ? '🔒 Scroll Lock' : 'Scroll Lock';
+  }
+
+  private updateZoomLabel(): void {
+    const z = this.rightView() === 'pdf' ? this.pdf.getZoom() : this.previewZoom;
+    $('view-zoom').textContent = formatZoom(z);
   }
 
   /** The right-hand view currently showing, or null when the pane is closed. */
@@ -742,7 +799,16 @@ export class App {
     for (const b of document.querySelectorAll<HTMLElement>('#right-tabs button'))
       b.classList.toggle('active', b.dataset['right'] === which);
     $('right-pane').hidden = false;
-    $('pdf-controls').hidden = which !== 'pdf';
+    $('pdf-fit').hidden = which !== 'pdf';
+    this.updateZoomLabel();
+    if (this.scrollLock) this.syncScroll();
+  }
+
+  private zoomPreview(dir: 1 | -1 | 0): void {
+    this.previewZoom = dir === 0 ? 1 : stepZoom(this.previewZoom, dir, 0.5, 3);
+    this.preview.setZoom(this.previewZoom);
+    localStorage.setItem('devtex.previewZoom', String(this.previewZoom));
+    this.selectRight('preview');
   }
 
   // ---------- zoom ----------
@@ -919,6 +985,40 @@ export class App {
       run: () => this.applyZoom(stepZoom(this.settings.ui.zoom, -1, 0.5, 3), true),
     });
     c.register({ id: 'view.zoomReset', title: 'Actual Size', run: () => this.applyZoom(1, true) });
+    c.register({
+      id: 'view.toggleWordWrap',
+      title: 'Toggle Word Wrap',
+      run: () => {
+        const on = !this.settings.editor.lineWrapping;
+        ed().setLineWrapping(on);
+        this.settings.editor.lineWrapping = on;
+        this.setStatus(`Word wrap ${on ? 'on' : 'off'}`);
+        void this.shell
+          .writeConfig('settings.jsonc', serializeSettings(this.settings))
+          .catch((e: unknown) => notice(`Could not save settings: ${errorText(e)}`));
+      },
+    });
+    c.register({
+      id: 'view.toggleScrollLock',
+      title: 'Toggle Scroll Lock',
+      run: () => {
+        this.scrollLock = !this.scrollLock;
+        localStorage.setItem('devtex.scrollLock', this.scrollLock ? '1' : '0');
+        this.renderScrollLock();
+        if (this.scrollLock) this.syncScroll();
+      },
+    });
+    c.register({ id: 'preview.zoomIn', title: 'Zoom Preview In', run: () => this.zoomPreview(1) });
+    c.register({
+      id: 'preview.zoomOut',
+      title: 'Zoom Preview Out',
+      run: () => this.zoomPreview(-1),
+    });
+    c.register({
+      id: 'preview.zoomReset',
+      title: 'Preview Actual Size',
+      run: () => this.zoomPreview(0),
+    });
     c.register({ id: 'pdf.zoomIn', title: 'Zoom PDF In', run: () => this.zoomPdf(1) });
     c.register({ id: 'pdf.zoomOut', title: 'Zoom PDF Out', run: () => this.zoomPdf(-1) });
     c.register({ id: 'pdf.zoomFit', title: 'Fit PDF to Width', run: () => this.zoomPdf(0) });

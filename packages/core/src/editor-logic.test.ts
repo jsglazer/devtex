@@ -118,6 +118,30 @@ describe('outline', () => {
     ]);
     expect(labelsOf(o)).toEqual(['sec:i']);
   });
+
+  it('lists Beamer frames under their section, with titles from any form', () => {
+    const t = [
+      '\\frame{\\titlepage}',
+      '\\section{Intro}',
+      '\\begin{frame}<1->[fragile]{Landscape}',
+      '\\end{frame}',
+      '\\begin{frame}',
+      '\\frametitle{Theory \\& Hypothesis}',
+      '\\end{frame}',
+      '\\subsection{Detail}',
+      '\\begin{frame}[plain]',
+      '\\end{frame}',
+    ].join('\n');
+    const o = outlineOf('a.tex', t);
+    expect(o.map((i) => [i.kind, i.level, i.title, i.line])).toEqual([
+      ['frame', 2, 'Title page', 1],
+      ['section', 2, 'Intro', 2],
+      ['frame', 3, 'Landscape', 3],
+      ['frame', 3, 'Theory \\& Hypothesis', 5],
+      ['section', 3, 'Detail', 8],
+      ['frame', 4, 'Frame', 9],
+    ]);
+  });
 });
 
 describe('bibtex', () => {

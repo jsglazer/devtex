@@ -59,4 +59,30 @@ describe('SyncTeX parser', () => {
     expect(parseSyncTex(plain).numberPages).toBe(1);
     expect(decodeSyncTex(gzipSync(strToU8('SyncTeX Version:1\n')))).toBe('SyncTeX Version:1\n');
   });
+
+  it('vertical-list nodes (e.g. \\end{frame} glue) do not take the page-high vbox height', () => {
+    // a page-high vbox holding glue from line 9 and a text line (hbox) from line 3
+    const sp = (pt: number): number => Math.round(pt * 65781.76);
+    const body = [
+      'SyncTeX Version:1',
+      'Input:1:./a.tex',
+      'X Offset:0',
+      'Y Offset:0',
+      'Content:',
+      '{1',
+      `[1,1:${sp(20)},${sp(300)}:${sp(300)},${sp(290)},0`,
+      `(1,3:${sp(30)},${sp(50)}:${sp(200)},${sp(10)},${sp(2)}`,
+      `x1,3:${sp(30)},${sp(50)}`,
+      ')',
+      `g1,9:${sp(20)},${sp(120)}`,
+      ']',
+      '}1',
+    ].join('\n');
+    const d = parseSyncTex(body);
+    const loc = syncToPdf(d, '/proj/a.tex', 9, BASE);
+    expect(loc?.rect && loc.rect.bottom - loc.rect.top).toBe(0);
+    expect(loc?.y).toBeCloseTo(120, 0);
+    const text = syncToPdf(d, '/proj/a.tex', 3, BASE);
+    expect(text?.rect && text.rect.bottom - text.rect.top).toBeCloseTo(10, 0);
+  });
 });

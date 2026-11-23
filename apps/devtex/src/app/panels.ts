@@ -20,14 +20,16 @@ export function renderOutline(
     const label =
       it.kind === 'section'
         ? it.title
-        : it.kind === 'label'
-          ? `🏷 ${it.title}`
-          : `${it.kind === 'figure' ? '🖼' : '▦'} ${it.title}`;
+        : it.kind === 'frame'
+          ? `▭ ${it.title}`
+          : it.kind === 'label'
+            ? `🏷 ${it.title}`
+            : `${it.kind === 'figure' ? '🖼' : '▦'} ${it.title}`;
     const li = el(
       'li',
       {
         class: `dt-ol-${it.kind}`,
-        style: `padding-left:${it.kind === 'section' ? it.level * 10 : 70}px`,
+        style: `padding-left:${it.kind === 'section' || it.kind === 'frame' ? it.level * 10 : 70}px`,
         title: `${it.file}:${it.line}`,
       },
       label,

@@ -14,7 +14,14 @@
  * There is never a synchronous full-document re-typeset.
  */
 import { splitBlocks, type SourceBlock } from '../blocks.js';
-import { collectMacros, macroSetHash, type MacroSet } from '../macros.js';
+import {
+  collectMacros,
+  collectTitleMeta,
+  macroSetHash,
+  titleMetaHash,
+  type MacroSet,
+  type TitleMeta,
+} from '../macros.js';
 import { dirname, escapeHtml } from '../text.js';
 import { includeClosure, resolveIncludePath, type FileMap } from '../project.js';
 import {
@@ -120,6 +127,7 @@ export class IncrementalRenderer {
   private macroHash = '';
   private parser: Parser | null = null;
   private macros: MacroSet = new Map();
+  private meta: TitleMeta = {};
   private rendered = false;
   private readonly initialTypesetBlocks: number;
   private readonly maxIncludeDepth: number;
@@ -163,12 +171,19 @@ export class IncrementalRenderer {
       (f) => snapshot.files.get(f) ?? '',
     );
     const macros = collectMacros(texts);
-    const h = macroSetHash(macros);
+    const meta = collectTitleMeta(texts);
+    const mh = macroSetHash(macros);
+    // title fields are part of the cache key so \titlepage blocks re-render when they change
+    const h = `${mh}.${titleMetaHash(meta)}`;
     if (this.parser === null || h !== this.macroHash) {
+      const macrosChanged = this.parser === null || !this.macroHash.startsWith(`${mh}.`);
       this.macroHash = h;
       this.macros = macros;
-      this.parser = makeParser(macros);
-      this.deps.math.setMacros(macros);
+      this.meta = meta;
+      if (macrosChanged) {
+        this.parser = makeParser(macros);
+        this.deps.math.setMacros(macros);
+      }
     }
   }
 
@@ -239,7 +254,7 @@ export class IncrementalRenderer {
           const ast = parser.parse(block.text);
           const tr = now();
           parseMs += tr - tp;
-          template = renderBlockTemplate(block, this.macros, parser, ast);
+          template = renderBlockTemplate(block, this.macros, parser, ast, this.meta);
           renderMs += now() - tr;
         } catch (e) {
           template = errorBlockTemplate(block, e instanceof Error ? e.message : String(e));

@@ -128,8 +128,24 @@ button.link {
   overflow: auto;
 }
 #splitter {
-  width: 1px;
-  background: var(--border);
+  flex: 0 0 7px;
+  margin: 0 -3px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+}
+#splitter:hover,
+body.dt-resizing #splitter {
+  background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
+}
+body.dt-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.dt-resizing iframe,
+body.dt-resizing .right-view {
+  pointer-events: none;
 }
 #right-pane {
   flex: 1;
@@ -404,11 +420,34 @@ figcaption {
 }
 .dt-titlepage {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.5em;
   min-height: 8em;
+  padding: 1em;
+  text-align: center;
+}
+.dt-frame-body > .dt-titlepage {
+  flex: 1;
+  height: 100%;
+}
+.dt-tp-title {
+  font-size: 1.6em;
+  font-weight: 600;
+  color: var(--accent);
+}
+.dt-tp-subtitle {
+  font-size: 1.15em;
+}
+.dt-tp-institute,
+.dt-tp-date {
+  font-size: 0.9em;
   color: var(--muted);
-  font-style: italic;
+}
+.dt-tp-and {
+  display: inline-block;
+  width: 2em;
 }
 .dt-alert {
   color: #c0392b;
@@ -446,6 +485,7 @@ figcaption {
   min-width: 0;
 }
 #pdf {
+  position: relative;
   background: #888;
   padding: 12px;
 }
@@ -465,6 +505,12 @@ figcaption {
   background: rgba(255, 200, 0, 0.35);
   border: 1px solid rgba(220, 150, 0, 0.8);
   pointer-events: none;
+}
+.dt-pdf-highlight.dt-pdf-highlight-page {
+  inset: -4px;
+  background: transparent;
+  border: 3px solid rgba(230, 160, 0, 0.9);
+  border-radius: 3px;
 }
 
 /* modals & notices */
@@ -655,6 +701,15 @@ body[data-platform='ios'] #outline {
   #main {
     flex-direction: column;
   }
+  #splitter {
+    margin: -3px 0;
+    cursor: row-resize;
+    background: linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat;
+  }
+  #splitter:hover,
+  body.dt-resizing #splitter {
+    background: linear-gradient(var(--accent), var(--accent)) center / 100% 3px no-repeat;
+  }
   #right-pane {
     flex: 1;
     border-top: 1px solid var(--border);
@@ -664,17 +719,22 @@ body[data-platform='ios'] #outline {
   }
 }
 
-#pdf-controls {
+#view-controls {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 2px;
   padding-right: 6px;
 }
-#pdf-controls[hidden] {
+#view-controls [hidden] {
   display: none;
 }
-#pdf-zoom {
+#scroll-lock[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  font-weight: 600;
+}
+#view-zoom {
   min-width: 44px;
   text-align: center;
   font-variant-numeric: tabular-nums;
