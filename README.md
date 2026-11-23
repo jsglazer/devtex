@@ -1,6 +1,8 @@
 # DevTex
 
-A personal LaTeX editor for macOS and iPad/iPhone, built around Obsidian, Zotero and GitHub review. Edit LaTeX on the left and see an instantly updating HTML preview on the right, with click-to-sync in both directions. Compile a real PDF with your TeX Live when you need exact layout, and push a draft to your review repo as one commit. The same `.tex` files open in Obsidian through the companion plugin, with no export step.
+[![GitHub release](https://img.shields.io/github/v/release/jsglazer/devtex?logo=github)](https://github.com/jsglazer/devtex/releases) [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/jsglazer/devtex/blob/main/LICENSE) [![Made with Claude](https://img.shields.io/badge/Made_with-Claude-D97756?logo=anthropic)](https://claude.ai) [![Gemini Flash Antigravity](https://img.shields.io/badge/Gemini%20Flash-Antigravity-4f86f7?logo=google-gemini&logoColor=white)](https://github.com/google-gemini)
+
+A personal LaTeX editor for macOS and iPad/iPhone, built around Obsidian, Zotero and GitHub review. Edit LaTeX on the left and see an instantly updating HTML preview ("Live") on the right, with click-to-sync in both directions. Compile a real PDF with your TeX Live when you need exact layout, and push a draft to your review repo as one commit. The same `.tex` files open in Obsidian through the companion plugin, with no export step.
 
 Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 and pdf.js.
 
@@ -11,25 +13,29 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
 - Auto-`\item`: Enter inside `itemize`/`enumerate`/`description` starts a new item; Enter on an empty item ends the list.
 - Completion for commands (including your own `\newcommand`s), environments, `\ref`/`\label` and `\cite` keys, plus grouped palettes for sectioning, environments, text size and alignment.
 - Diagnostics for undefined `\ref`s, unknown citekeys and structural errors, plus latexmk warnings on macOS.
-- Outline (sections, figures, tables, labels), file tabs, and a Problems panel.
+- Outline (sections, figures, tables, labels) that updates as you type, file tabs, and a Problems panel.
+- Show/Hide Preamble (toolbar **Preamble**, View ▸ Show/Hide Preamble, ⌥⌘P) folds everything before `\begin{document}` into one line.
 
-**Instant HTML preview**
+**Instant HTML preview (Live)**
 - Renders prose, sectioning, lists, emphasis, citations/refs, `tabular`, inline and display math (`equation`, `align`, …), theorem-like environments and floats.
 - Uses your macros: `\newcommand`, `\renewcommand`, `\DeclareMathOperator` and argument-free `\def` from the preamble and every included file.
+- Beamer: frames render as slides with their title and subtitle (`\begin{frame}{…}{…}`, `\frametitle`, `\framesubtitle`, `\frame{…}`), plus `block`/`alertblock`/`exampleblock`, `columns`/`column` (and `\column{0.5\textwidth}`), `\alert` and a title-page placeholder. Overlay specs (`\item<2->`, `\only<…>`, `\pause`, …) are ignored, so every overlay's content shows at once.
 - TikZ, unknown macros and unsupported environments show a labelled placeholder with the source line; they never break the preview.
 - Incremental rendering in a Web Worker: only edited blocks are re-parsed and re-typeset. On a 2,725-line, 9-file test project a single-block edit renders well under the 250 ms target (enforced by a test).
-- Two-way sync: moving the cursor highlights the matching preview element, and clicking the preview jumps to the source line.
+- Two-way sync: moving the cursor highlights the matching element in whichever view is showing (Live or PDF), and clicking either view jumps to the source line.
 
 **Multi-file projects**
 - Root detection from `% !TEX root = …`, otherwise from the `\input`/`\include` graph; engine from `% !TEX program = …` (pdflatex, xelatex, lualatex).
 
 **PDF (macOS)**
 - Compiles with your installed `latexmk` (found on your login shell PATH) using `-synctex=1 -interaction=nonstopmode -file-line-error`. Aux files go to `~/Library/Caches/DevTex/<project>/`; only the final PDF is copied next to the root `.tex`, so nothing extra enters your Obsidian vault.
-- pdf.js viewer with SyncTeX forward and inverse search, using a pure TypeScript SyncTeX parser (no `synctex` CLI).
+- pdf.js viewer with SyncTeX forward and inverse search, using a pure TypeScript SyncTeX parser (no `synctex` CLI). A PDF already on disk when you open the project uses the SyncTeX data from its last DevTex compile, so sync works without recompiling.
+- If the PDF is deleted on disk, the PDF pane clears and prompts you to compile.
 - Clickable compile errors and warnings.
 
 **Obsidian-friendly files**
 - Open a folder inside your vault; the `.tex` files on disk are the only copy.
+- File ▸ Open Recent Project… (⇧⌘O, macOS) lists the last 15 project folders.
 - External changes (Obsidian, Obsidian Sync) are detected by file watching on macOS, and on iOS on foreground, every 5 s and before each save. A clean buffer reloads silently; with unsaved edits you get a prompt (keep mine / load disk / show diff). Every save checks the file's mtime and SHA-256 first and never overwrites an external edit without asking.
 
 **Citations**
@@ -49,7 +55,8 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
 - Config files (JSONC) live in `~/Library/Application Support/DevTex/` on macOS and in the app container on iOS:
   - `settings.jsonc`: editor font, size, highlight colours, preview debounce, timing HUD, latexmk path, bad-box reporting.
   - `keymap.json`: `[{ "key": "Mod-Shift-b", "command": "palette.environments" }]`. Reserved keys are rejected and reported. Map a key to `""` to unbind it.
-  - `toolbars.json`: show/hide toolbars holding any command.
+  - `toolbars.json`: show/hide toolbars holding any command. Use `"|"` (or `"-"`, or `{ "separator": true }`) as an item for a divider.
+  - `recent.json`: the recent projects list, written by the app.
   - `syntax/*.json`: custom highlighting rules for LaTeX or embedded code.
 - Invalid config never crashes the app: defaults are used and the problems appear in the Problems panel.
 - The Settings dialog covers editor font face, font size and highlight colours.
@@ -98,7 +105,7 @@ cd packages/obsidian-devtex
 pnpm build                   # dist/main.js; copy it with manifest.json to <vault>/.obsidian/plugins/devtex/
 ```
 
-Debug builds also read `DEVTEX_OPEN=<folder>` (open a project at launch) and `DEVTEX_RUN=<command,…>` (run commands after opening) for manual QA. Release builds ignore both.
+Debug builds also read `DEVTEX_OPEN=<folder>` (open a project at launch) and `DEVTEX_RUN=<command,…>` (run commands after opening) for manual QA. `DEVTEX_RUN` also accepts `goto:<line>` to move the cursor. Release builds ignore both.
 
 ## License
 
