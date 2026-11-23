@@ -4,6 +4,7 @@
  */
 import * as pdfjs from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { scrollWithin } from './scroll.js';
 import {
   decodeSyncTex,
   parseSyncTex,
@@ -107,6 +108,25 @@ export class PdfPane {
     this.zoom = next;
     this.onZoom?.(next);
     await this.render();
+  }
+
+  /** Drop the document (e.g. the PDF was deleted on disk) and show an empty-state note. */
+  async clear(message: string): Promise<void> {
+    this.generation++;
+    this.visibleObserver.disconnect();
+    const task = this.task;
+    this.task = null;
+    this.doc = null;
+    this.synctex = null;
+    this.pages = [];
+    this.sizes = [];
+    this.marker = null;
+    this.overlay = null;
+    const note = document.createElement('div');
+    note.className = 'dt-pdf-empty';
+    note.textContent = message;
+    this.container.replaceChildren(note);
+    await task?.destroy();
   }
 
   hasDocument(): boolean {
@@ -219,16 +239,19 @@ export class PdfPane {
     }
   }
 
-  /** Source -> PDF: scroll to and highlight (file, line). Returns false without SyncTeX data. */
-  reveal(relFile: string, line: number): boolean {
+  /**
+   * Source -> PDF: scroll to and highlight (file, line). Returns false without
+   * SyncTeX data. `quiet` (cursor-follow): only scroll when the target is off
+   * screen. Scrolls this pane only, never its ancestors.
+   */
+  reveal(relFile: string, line: number, opts: { quiet?: boolean } = {}): boolean {
     if (this.synctex === null) return false;
     const loc = syncToPdf(this.synctex, this.toAbs(relFile), line, this.baseDir);
     if (!loc) return false;
     const pv = this.pages[loc.page - 1];
     if (!pv) return false;
     this.drawMarker(pv, loc.page, loc.x, loc.y, loc.rect ?? null);
-    pv.wrap.scrollIntoView({ block: 'nearest' });
-    this.overlay?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (this.overlay) scrollWithin(this.container, this.overlay, opts.quiet === true);
     return true;
   }
 

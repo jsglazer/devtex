@@ -15,6 +15,7 @@ import {
 } from '@devtex/core';
 import type { BlockUpdate, RenderTimings, RenderUpdate } from '@devtex/core/render';
 import type { FromWorker, ToWorker } from '../worker/protocol.js';
+import { scrollWithin } from './scroll.js';
 
 export interface PreviewOptions {
   container: HTMLElement;
@@ -228,12 +229,7 @@ export class PreviewPane {
     );
     const target = inner.find((n) => Number(n.dataset['sourceLine']) === best) ?? block;
     this.highlightElement(target);
-    if (scroll) {
-      const c = this.opts.container.getBoundingClientRect();
-      const r = target.getBoundingClientRect();
-      if (r.top < c.top || r.bottom > c.bottom)
-        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
+    if (scroll) scrollWithin(this.opts.container, target, true);
   }
 
   setDebounce(ms: number): void {

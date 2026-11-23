@@ -6,6 +6,7 @@ import { startCompletion } from '@codemirror/autocomplete';
 import { EditorSelection } from '@codemirror/state';
 import { insertTemplate, wrapCommand, type ProjectKnowledge } from '@devtex/cm-latex';
 import {
+  addRecent,
   BetterBibTexClient,
   bibLabel,
   clampZoom,
@@ -15,6 +16,7 @@ import {
   dirname,
   engineOf,
   loadKeymap,
+  loadRecent,
   loadSettings,
   loadSyntaxFile,
   loadToolbars,
@@ -22,6 +24,8 @@ import {
   parseLatexLog,
   parseMagicComments,
   pdfPathFor,
+  removeRecent,
+  serializeRecent,
   serializeSettings,
   type BbtItem,
   type CitationInfo,
@@ -68,6 +72,8 @@ const $ = (id: string): HTMLElement => {
   return e;
 };
 
+const NO_PDF = 'No PDF. Compile (⌘R) to build one.';
+
 /** iOS: external-change poll interval while active (decision: every 5 s). */
 export const IOS_POLL_MS = 5000;
 
@@ -98,7 +104,10 @@ export class App {
   private bbtTimer: ReturnType<typeof setTimeout> | null = null;
   private problemsTimer: ReturnType<typeof setTimeout> | null = null;
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
+  private outlineTimer: ReturnType<typeof setTimeout> | null = null;
   private compiling = false;
+  /** Recently opened project folders, newest first (recent.json, macOS only). */
+  private recent: string[] = [];
 
   constructor(private readonly shell: Shell) {
     this.session = new ProjectSession(
@@ -204,15 +213,23 @@ export class App {
       if (local) local(this.editor.view);
       else this.commands.run(id);
     });
-    await this.shell.onFsChanged((paths) => void this.session.checkExternal(paths));
+    await this.shell.onFsChanged((paths) => {
+      void this.session.checkExternal(paths);
+      void this.checkPdf(paths);
+    });
     // foreground check (both platforms) and iOS polling
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && this.project) void this.session.checkExternal();
+      if (document.visibilityState === 'visible' && this.project) {
+        void this.session.checkExternal();
+        void this.checkPdf();
+      }
     });
     if (this.platform.os === 'ios') {
       setInterval(() => {
-        if (document.visibilityState === 'visible' && this.project)
+        if (document.visibilityState === 'visible' && this.project) {
           void this.session.checkExternal();
+          void this.checkPdf();
+        }
       }, IOS_POLL_MS);
       const acc = $('accessory');
       acc.hidden = false;
@@ -240,9 +257,12 @@ export class App {
     if (typeof this.platform.initialProject === 'string')
       await this.openProject(this.platform.initialProject);
     if (typeof this.platform.initialCommands === 'string') {
+      // debug-only QA hook: command ids, or `goto:<line>` to move the editor cursor
       for (const id of this.platform.initialCommands.split(',')) {
         const local = CM_COMMANDS[id];
-        if (local) local(this.editor.view);
+        const go = /^goto:(\d+)$/.exec(id.trim());
+        if (go?.[1] !== undefined) this.editor.goTo(Number(go[1]), false);
+        else if (local) local(this.editor.view);
         else this.commands.run(id.trim());
         await new Promise((r) => setTimeout(r, 1500));
       }
@@ -271,6 +291,7 @@ export class App {
       if (def.value !== null) this.syntax.push(def.value);
     }
     this.configErrors = errors;
+    this.recent = loadRecent(await this.shell.readConfig('recent.json'));
     document.documentElement.style.setProperty(
       '--dt-env-pair',
       this.settings.colors.environmentPair,
@@ -320,8 +341,11 @@ export class App {
       this.project = await this.shell.openProject(chosen);
     } catch (e) {
       notice(errorText(e));
+      if (this.recent.includes(chosen)) await this.saveRecent(removeRecent(this.recent, chosen));
       return;
     }
+    if (this.platform.os !== 'ios')
+      await this.saveRecent(addRecent(this.recent, this.project.root));
     this.preview.reset();
     await this.session.load();
     const tex = this.session.texPaths();
@@ -355,6 +379,36 @@ export class App {
     this.editor.goTo(line);
   }
 
+  private async saveRecent(list: string[]): Promise<void> {
+    this.recent = list;
+    try {
+      await this.shell.writeConfig('recent.json', serializeRecent(list));
+    } catch (e) {
+      notice(`Could not save the recent projects list: ${errorText(e)}`);
+    }
+  }
+
+  private async openRecent(): Promise<void> {
+    if (this.recent.length === 0) {
+      notice('No recent projects yet.');
+      return;
+    }
+    const items = this.recent.map((p) => ({
+      label:
+        p
+          .split('/')
+          .filter((x) => x !== '')
+          .pop() ?? p,
+      detail: p,
+      value: p,
+    }));
+    items.push({ label: 'Clear Recent Projects', detail: '', value: '\u0000clear' });
+    const pick = await pickDialog('Open Recent Project', items);
+    if (pick === null) return;
+    if (pick === '\u0000clear') await this.saveRecent([]);
+    else await this.openProject(pick);
+  }
+
   private projectChanged(): void {
     if (!this.project) return;
     this.refreshPreview(false);
@@ -367,13 +421,24 @@ export class App {
     this.session.setText(path, text);
     this.refreshPreview(false);
     this.renderTabsSoon();
+    this.scheduleOutline();
     this.scheduleProblems();
     this.maybeQueryZotero();
   }
 
+  /** Editor -> right pane: follow the cursor in whichever view (Live or PDF) is showing. */
   private onCursor(path: string, line: number): void {
     if (this.syncTimer !== null) clearTimeout(this.syncTimer);
-    this.syncTimer = setTimeout(() => this.preview.reveal(path, line), 150);
+    this.syncTimer = setTimeout(() => {
+      if (this.rightView() === 'pdf') this.pdf.reveal(path, line, { quiet: true });
+      else this.preview.reveal(path, line);
+    }, 150);
+  }
+
+  /** The right-hand view currently showing, or null when the pane is closed. */
+  private rightView(): 'preview' | 'pdf' | null {
+    if ($('right-pane').hidden) return null;
+    return $('pdf').hidden ? 'preview' : 'pdf';
   }
 
   private refreshPreview(immediate: boolean): void {
@@ -405,6 +470,14 @@ export class App {
       (f) => this.session.isDirty(f),
       (f) => this.openFile(f),
     );
+  }
+
+  private scheduleOutline(): void {
+    if (this.outlineTimer !== null) clearTimeout(this.outlineTimer);
+    this.outlineTimer = setTimeout(() => {
+      this.outlineTimer = null;
+      this.renderOutline();
+    }, 400);
   }
 
   private renderOutline(): void {
@@ -541,12 +614,35 @@ export class App {
     }
   }
 
+  /** Show the root's PDF if one exists (with cached SyncTeX data); otherwise clear the pane. */
   private async loadExistingPdf(): Promise<void> {
     if (this.root === '') return;
-    if ((await this.shell.fs.stat(pdfPathFor(this.root))) !== null) await this.loadPdf(null);
+    if ((await this.shell.fs.stat(pdfPathFor(this.root))) === null) {
+      if (this.pdf.hasDocument()) await this.pdf.clear(NO_PDF);
+      return;
+    }
+    const syn = await this.shell.cachedSynctex(this.root).catch(() => null);
+    await this.loadPdf(syn, false);
   }
 
-  private async loadPdf(synctexPath: string | null): Promise<void> {
+  /**
+   * React to the root's PDF changing on disk: drop it from the pane when it was
+   * deleted, show it when one appears. Skipped while compiling (compile loads it).
+   */
+  private async checkPdf(paths?: readonly string[]): Promise<void> {
+    if (this.root === '' || this.compiling) return;
+    const pdfPath = pdfPathFor(this.root);
+    if (paths !== undefined && !paths.includes('*') && !paths.includes(pdfPath)) return;
+    const exists = (await this.shell.fs.stat(pdfPath).catch(() => null)) !== null;
+    if (!exists && this.pdf.hasDocument()) {
+      await this.pdf.clear(NO_PDF);
+      this.setStatus(`${pdfPath} was deleted.`);
+    } else if (exists && !this.pdf.hasDocument()) {
+      await this.loadExistingPdf();
+    }
+  }
+
+  private async loadPdf(synctexPath: string | null, select = true): Promise<void> {
     if (!this.project) return;
     try {
       const bytes = await this.shell.fs.readBytes(pdfPathFor(this.root));
@@ -555,7 +651,7 @@ export class App {
       const dir = dirname(this.root);
       const base = dir === '.' ? this.project.root : `${this.project.root}/${dir}`;
       await this.pdf.load(bytes, syn, base, this.project.root);
-      if (synctexPath !== null) this.selectRight('pdf');
+      if (select && synctexPath !== null) this.selectRight('pdf');
     } catch (e) {
       notice(`Could not show the PDF: ${errorText(e)}`);
     }
@@ -702,6 +798,20 @@ export class App {
       run: () => this.openProject(),
     });
     c.register({
+      id: 'file.openRecent',
+      title: 'Open Recent Project…',
+      run: () => this.openRecent(),
+      available: () => this.platform.os !== 'ios',
+    });
+    c.register({
+      id: 'view.togglePreamble',
+      title: 'Show/Hide Preamble',
+      run: () => {
+        if (!ed().togglePreamble())
+          notice('This file has no preamble (no \\begin{document} after line 2).');
+      },
+    });
+    c.register({
       id: 'file.save',
       title: 'Save',
       run: async () => {
@@ -764,7 +874,7 @@ export class App {
     c.register({ id: 'pane.focusEditor', title: 'Focus Editor', run: () => ed().view.focus() });
     c.register({
       id: 'pane.togglePreview',
-      title: 'Toggle HTML Preview',
+      title: 'Toggle Live Preview',
       run: () => {
         const showing = !$('preview').hidden && !$('right-pane').hidden;
         if (showing) $('right-pane').hidden = true;

@@ -4,9 +4,19 @@
 import { parseJsoncText, type Loaded } from './settings.js';
 
 export interface ToolbarItem {
+  /** Command id, or TOOLBAR_SEPARATOR for a vertical divider. */
   command: string;
   /** Button label; defaults to the command id. */
   label?: string;
+}
+
+/** Item command that renders as a divider. toolbars.json accepts "|", "-" or {"separator": true}. */
+export const TOOLBAR_SEPARATOR = '|';
+
+const SEP: ToolbarItem = { command: TOOLBAR_SEPARATOR };
+
+export function isSeparator(item: ToolbarItem): boolean {
+  return item.command === TOOLBAR_SEPARATOR;
 }
 
 export interface Toolbar {
@@ -25,10 +35,13 @@ export const DEFAULT_TOOLBARS: Toolbar[] = [
       { command: 'file.openProject', label: 'Open' },
       { command: 'file.save', label: 'Save' },
       { command: 'compile.pdf', label: 'Compile' },
-      { command: 'pane.togglePreview', label: 'Preview' },
+      SEP,
+      { command: 'pane.togglePreview', label: 'Live' },
       { command: 'pane.togglePdf', label: 'PDF view' },
+      SEP,
       { command: 'pane.toggleOutline', label: 'Outline' },
       { command: 'pane.toggleProblems', label: 'Problems' },
+      { command: 'view.togglePreamble', label: 'Preamble' },
       { command: 'git.pushReview', label: 'Push' },
     ],
   },
@@ -78,6 +91,16 @@ export function loadToolbars(
     const items: ToolbarItem[] = [];
     const rawItems = Array.isArray(r['items']) ? (r['items'] as unknown[]) : [];
     rawItems.forEach((it, k) => {
+      if (
+        it === '|' ||
+        it === '-' ||
+        (typeof it === 'object' &&
+          it !== null &&
+          (it as Record<string, unknown>)['separator'] === true)
+      ) {
+        items.push(SEP);
+        return;
+      }
       const cmd =
         typeof it === 'string'
           ? it

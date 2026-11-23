@@ -157,3 +157,31 @@ describe('syntax/*.json', () => {
     expect(loadSyntaxFile('x.json', '[]').value).toBeNull();
   });
 });
+
+describe('toolbar separators', () => {
+  it('default main toolbar: Live label and dividers around Live/PDF view', () => {
+    const main = DEFAULT_TOOLBARS[0]?.items.map((i) => i.label ?? i.command);
+    expect(main).toEqual([
+      'Open',
+      'Save',
+      'Compile',
+      '|',
+      'Live',
+      'PDF view',
+      '|',
+      'Outline',
+      'Problems',
+      'Preamble',
+      'Push',
+    ]);
+  });
+
+  it('toolbars.json accepts "|", "-" and {separator:true}', () => {
+    const r = loadToolbars(
+      JSON.stringify([{ id: 't', items: ['a.b', '|', '-', { separator: true }, 'c.d'] }]),
+      new Set(['a.b', 'c.d']),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.value[0]?.items.map((i) => i.command)).toEqual(['a.b', '|', '|', '|', 'c.d']);
+  });
+});

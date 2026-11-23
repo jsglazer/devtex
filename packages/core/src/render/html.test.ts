@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { splitBlocks } from '../blocks.js';
 import { collectMacros } from '../macros.js';
 import { IncrementalRenderer, materializeLines } from './incremental.js';
-import { makeParser, MATH_CLOSE, MATH_OPEN, parseColumnSpec, renderBlockTemplate } from './html.js';
+import {
+  columnWidth,
+  makeParser,
+  MATH_CLOSE,
+  MATH_OPEN,
+  parseColumnSpec,
+  renderBlockTemplate,
+} from './html.js';
 import type { MathRenderer } from './mathjax.js';
 import { MathJaxRenderer } from './mathjax.js';
 
@@ -155,5 +162,48 @@ describe('IncrementalRenderer', () => {
     mj.setMacros(collectMacros(['\\newcommand{\\R}{\\mathbb{R}}']));
     expect(mj.render('x \\in \\R', false)).toContain('<svg');
     expect(mj.render('\\frac{a}{b', true)).toContain('dt-math-error');
+  });
+});
+
+describe('beamer', () => {
+  it('renders a frame as a slide with title, subtitle and overlays stripped', () => {
+    const h = render(
+      '\\begin{frame}<2>[fragile]{Intro}{Why}\n\\begin{itemize}\n\\item<1-> First $x$\n\\item<2-> Second \\pause\n\\end{itemize}\n\\only<2>{shown} \\alert<3>{hot} \\onslide<2->\n\\end{frame}',
+    );
+    expect(h).toContain('<section class="dt-frame"');
+    expect(h).toContain('<div class="dt-frame-title" data-source-line="1">Intro</div>');
+    expect(h).toContain('<div class="dt-frame-subtitle">Why</div>');
+    expect(h).toContain('First');
+    expect(h).toContain('Second');
+    expect(h).toContain('shown');
+    expect(h).toContain('<span class="dt-alert">hot</span>');
+    expect(h).not.toContain('dt-unsupported');
+    expect(h).not.toContain('&lt;');
+  });
+
+  it('renders \\frametitle, \\frame{\\titlepage}, blocks and columns', () => {
+    const f = render(
+      '\\begin{frame}\n\\frametitle{Results}\n\\begin{block}{Key}\nbody\n\\end{block}\n\\begin{columns}\n\\column{0.4\\textwidth} Left\n\\column{.6\\linewidth} Right\n\\end{columns}\n\\begin{columns}\n\\begin{column}{0.5\\textwidth} A \\end{column}\n\\begin{column}{0.5\\textwidth} B \\end{column}\n\\end{columns}\n\\end{frame}',
+    );
+    expect(f).toContain('<div class="dt-frame-title" data-source-line="2">Results</div>');
+    expect(f).toContain('dt-beamer-block dt-block');
+    expect(f).toContain('<div class="dt-beamer-block-title">Key</div>');
+    expect(f).toContain('<div class="dt-columns"');
+    expect(f).toContain('style="flex:0 1 40.0%"');
+    expect(f).toContain('style="flex:0 1 60.0%"');
+    expect(f).toMatch(/Left\s*<\/div><div class="dt-column"/);
+    expect(f.match(/style="flex:0 1 50.0%"/g)).toHaveLength(2);
+    expect(f).not.toContain('dt-unsupported');
+    const t = render('\\frame{\\titlepage}');
+    expect(t).toContain('<section class="dt-frame"');
+    expect(t).toContain('dt-titlepage');
+    expect(t).not.toContain('dt-unsupported');
+  });
+
+  it('columnWidth handles relative widths only', () => {
+    expect(columnWidth('0.5\\textwidth')).toBe('50.0%');
+    expect(columnWidth('.3\\linewidth')).toBe('30.0%');
+    expect(columnWidth('40%')).toBe('40.0%');
+    expect(columnWidth('5cm')).toBeNull();
   });
 });

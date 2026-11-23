@@ -222,6 +222,20 @@ pub async fn read_synctex(app: AppHandle, path: String) -> AppResult<Response> {
     Ok(Response::new(std::fs::read(p)?))
 }
 
+/// Cached .synctex.gz for the existing PDF of `root` (see latexmk::cached_synctex).
+#[tauri::command]
+pub async fn cached_synctex(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    root: String,
+) -> AppResult<Option<String>> {
+    let abs = state.scope()?.resolve(&root)?;
+    let cache = app.path().cache_dir().map_err(|e| AppError::Io {
+        message: e.to_string(),
+    })?;
+    Ok(crate::latexmk::cached_synctex(&cache, &abs).map(|p| p.display().to_string()))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PushEntry {
@@ -369,7 +383,7 @@ pub fn platform() -> PlatformInfo {
 }
 
 /// Commands registered with the app (also the ACL list in build.rs).
-pub const COMMANDS: [&str; 19] = [
+pub const COMMANDS: [&str; 20] = [
     "platform",
     "open_project",
     "list_files",
@@ -380,6 +394,7 @@ pub const COMMANDS: [&str; 19] = [
     "compile",
     "cancel_compile",
     "read_synctex",
+    "cached_synctex",
     "push_review",
     "set_token",
     "has_token",

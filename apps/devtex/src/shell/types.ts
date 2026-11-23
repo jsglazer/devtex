@@ -102,6 +102,8 @@ export interface Shell {
   compile(root: string, engine: Engine, latexmkPath: string): Promise<CompileOutcome>;
   cancelCompile(): Promise<void>;
   readSynctex(path: string): Promise<Uint8Array>;
+  /** Cached SyncTeX path for the root's existing PDF (from an earlier compile), or null. */
+  cachedSynctex(root: string): Promise<string | null>;
   push(entries: PushRequestEntry[], message: string, allowUntracked: boolean): Promise<PushOutcome>;
   hasToken(): Promise<boolean>;
   setToken(token: string): Promise<void>;

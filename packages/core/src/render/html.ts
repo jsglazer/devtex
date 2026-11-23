@@ -69,11 +69,53 @@ const EXTRA_SIGNATURES: Record<string, { signature: string }> = {
   addbibresource: { signature: 'o m' },
   input: { signature: 'm' },
   include: { signature: 'm' },
+  // beamer: `d<>` takes an optional overlay spec such as <2->
+  frame: { signature: 'd<> o o m' },
+  frametitle: { signature: 'd<> o m' },
+  framesubtitle: { signature: 'd<> m' },
+  alert: { signature: 'd<> m' },
+  structure: { signature: 'd<> m' },
+  only: { signature: 'd<> m' },
+  uncover: { signature: 'd<> m' },
+  visible: { signature: 'd<> m' },
+  invisible: { signature: 'd<> m' },
+  alt: { signature: 'd<> m m' },
+  temporal: { signature: 'd<> m m m' },
+  onslide: { signature: 's d<>' },
+  pause: { signature: 'o' },
+  note: { signature: 'o m' },
+  column: { signature: 'd<> o m' },
+  textcolor: { signature: 'o m m' },
+};
+
+/** Beamer environment signatures (overlay specs, frame options, block titles). */
+const EXTRA_ENVIRONMENTS: Record<string, { signature: string }> = {
+  frame: { signature: 'd<> o o d<>' },
+  block: { signature: 'd<> m d<>' },
+  alertblock: { signature: 'd<> m d<>' },
+  exampleblock: { signature: 'd<> m d<>' },
+  columns: { signature: 'o' },
+  column: { signature: 'd<> o m' },
+  onlyenv: { signature: 'd<>' },
+  altenv: { signature: 'd<>' },
 };
 
 /** Build a parser that knows the user's macro arities. */
 export function makeParser(macros: MacroSet): Parser {
-  return getParser({ macros: { ...EXTRA_SIGNATURES, ...toParserSignatures(macros) } });
+  return getParser({
+    macros: { ...EXTRA_SIGNATURES, ...toParserSignatures(macros) },
+    environments: EXTRA_ENVIRONMENTS,
+  });
+}
+
+/** `0.45\textwidth` / `.5\linewidth` / `60%` → a CSS percentage; null when not relative. */
+export function columnWidth(spec: string): string | null {
+  const s = spec.trim();
+  const rel = /^(\d*\.?\d+)\s*\\(?:textwidth|linewidth|columnwidth|hsize)$/.exec(s);
+  if (rel?.[1] !== undefined) return `${Math.min(100, Number(rel[1]) * 100).toFixed(1)}%`;
+  const pct = /^(\d*\.?\d+)\s*%$/.exec(s);
+  if (pct?.[1] !== undefined) return `${Math.min(100, Number(pct[1])).toFixed(1)}%`;
+  return null;
 }
 
 const SECTION_LEVEL: Record<string, number> = {
@@ -292,7 +334,26 @@ const IGNORED = new Set([
   'ignorespaces',
   'unskip',
   'xspace',
+  // beamer: overlay/presentation commands with no static output
+  'pause',
+  'onslide',
+  'note',
+  'usetheme',
+  'usecolortheme',
+  'usefonttheme',
+  'useinnertheme',
+  'useoutertheme',
+  'setbeamertemplate',
+  'setbeamercolor',
+  'setbeamerfont',
+  'AtBeginSection',
+  'AtBeginSubsection',
+  'beamertemplatenavigationsymbolsempty',
 ]);
+
+/** Beamer commands whose static rendering is just their (last) content argument. */
+const BEAMER_CONTENT = new Set(['only', 'uncover', 'visible', 'invisible']);
+const BEAMER_BLOCKS = new Set(['block', 'alertblock', 'exampleblock']);
 
 const LIST_ENVS: Record<string, string> = { itemize: 'ul', enumerate: 'ol', description: 'dl' };
 const TABLE_ENVS = new Set([
@@ -626,6 +687,35 @@ class BlockRenderer {
     if (name === 'bibliography' || name === 'printbibliography') {
       return `<h2 class="dt-heading" data-source-line="${lineMarker(this.relLine(n))}">References</h2>`;
     }
+    // ---- beamer ----
+    if (name === 'frametitle' || name === 'framesubtitle') {
+      const cls = name === 'frametitle' ? 'dt-frame-title' : 'dt-frame-subtitle';
+      return `<div class="${cls}" data-source-line="${lineMarker(this.relLine(n))}">${this.renderNodes(lastMandatory(n)?.content ?? [])}</div>`;
+    }
+    if (name === 'frame') {
+      return `<section class="dt-frame" data-source-line="${lineMarker(this.relLine(n))}"><div class="dt-frame-body">${this.renderNodes(lastMandatory(n)?.content ?? [])}</div></section>`;
+    }
+    if (name === 'titlepage') {
+      return `<div class="dt-titlepage" data-source-line="${lineMarker(this.relLine(n))}">Title page</div>`;
+    }
+    if (name === 'alert') {
+      return `<span class="dt-alert">${this.renderNodes(lastMandatory(n)?.content ?? [])}</span>`;
+    }
+    if (name === 'structure') {
+      return `<span class="dt-structure">${this.renderNodes(lastMandatory(n)?.content ?? [])}</span>`;
+    }
+    if (BEAMER_CONTENT.has(name)) return this.renderNodes(lastMandatory(n)?.content ?? []);
+    if (name === 'alt' || name === 'temporal') {
+      // static preview: the first (default-slide) alternative
+      const m = mandatoryArgs(n);
+      return this.renderNodes((name === 'temporal' ? m[1] : m[0])?.content ?? []);
+    }
+    if (name === 'textcolor') {
+      const [color, body] = mandatoryArgs(n);
+      const c = this.argSource(color).trim();
+      const style = /^[a-zA-Z]+$/.test(c) ? ` style="color:${c}"` : '';
+      return `<span${style}>${this.renderNodes(body?.content ?? [])}</span>`;
+    }
     if (name === 'input' || name === 'include' || name === 'subfile') {
       return this.placeholder(`[\\${name}{${this.argSource(lastMandatory(n))}}]`, n, true);
     }
@@ -701,7 +791,78 @@ class BlockRenderer {
     }
     if (PASSTHROUGH_ENVS.has(name))
       return `<div data-source-line="${line}">${this.renderNodes(n.content)}</div>`;
+    if (name === 'frame') return this.renderFrame(n);
+    if (BEAMER_BLOCKS.has(name)) {
+      const title = (n.args ?? []).find((a) => a.openMark === '{');
+      return `<div class="dt-beamer-block dt-${name}" data-source-line="${line}"><div class="dt-beamer-block-title">${this.renderNodes(title?.content ?? [])}</div><div class="dt-beamer-block-body">${this.renderNodes(n.content)}</div></div>`;
+    }
+    if (name === 'columns') return this.renderColumns(n);
+    if (name === 'column') {
+      const w = columnWidth(this.argSource((n.args ?? []).find((a) => a.openMark === '{')));
+      return `<div class="dt-column"${w === null ? '' : ` style="flex:0 1 ${w}"`} data-source-line="${line}">${this.renderNodes(n.content)}</div>`;
+    }
+    if (name === 'onlyenv' || name === 'altenv' || name === 'overprint')
+      return `<div data-source-line="${line}">${this.renderNodes(n.content)}</div>`;
     return this.placeholder(`[unsupported environment: ${name}]`, n, true);
+  }
+
+  /**
+   * Beamer frame as a slide. `\begin{frame}{Title}{Subtitle}`: the parser
+   * leaves the optional title groups at the start of the content.
+   */
+  private renderFrame(n: Ast.Environment): string {
+    const content = [...n.content];
+    const titles: Ast.Group[] = [];
+    while (titles.length < 2) {
+      const i = content.findIndex((c) => c.type !== 'whitespace' && c.type !== 'comment');
+      const c = content[i];
+      if (c?.type !== 'group') break;
+      titles.push(c);
+      content.splice(0, i + 1);
+    }
+    const [title, subtitle] = titles;
+    let head = '';
+    if (title !== undefined) {
+      head = `<div class="dt-frame-title" data-source-line="${lineMarker(this.relLine(n))}">${this.renderNodes(title.content)}</div>`;
+      if (subtitle !== undefined)
+        head += `<div class="dt-frame-subtitle">${this.renderNodes(subtitle.content)}</div>`;
+    }
+    return `<section class="dt-frame" data-source-line="${lineMarker(this.relLine(n))}">${head}<div class="dt-frame-body">${this.renderNodes(content)}</div></section>`;
+  }
+
+  /** `columns` holding `column` environments and/or `\column{w}` separators. */
+  private renderColumns(n: Ast.Environment): string {
+    let out = `<div class="dt-columns" data-source-line="${lineMarker(this.relLine(n))}">`;
+    let open = false;
+    let pending: Ast.Node[] = [];
+    const flushLoose = (): void => {
+      if (
+        pending.some(
+          (c) => c.type !== 'whitespace' && c.type !== 'parbreak' && c.type !== 'comment',
+        )
+      )
+        out += this.renderNodes(pending);
+      pending = [];
+    };
+    for (const c of n.content) {
+      if (c.type === 'macro' && c.content === 'column') {
+        flushLoose();
+        if (open) out += '</div>';
+        const w = columnWidth(this.argSource(lastMandatory(c)));
+        out += `<div class="dt-column"${w === null ? '' : ` style="flex:0 1 ${w}"`} data-source-line="${lineMarker(this.relLine(c))}">`;
+        open = true;
+        continue;
+      }
+      if (!open && c.type === 'environment' && envName(c) === 'column') {
+        flushLoose();
+        out += this.renderNode(c);
+        continue;
+      }
+      pending.push(c);
+    }
+    flushLoose();
+    if (open) out += '</div>';
+    return `${out}</div>`;
   }
 
   private renderList(n: Ast.Environment, tag: string): string {

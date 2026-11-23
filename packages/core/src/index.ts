@@ -32,6 +32,7 @@ export * from './ports.js';
 export * from './config/settings.js';
 export * from './config/keymap.js';
 export * from './config/toolbars.js';
+export * from './config/recent.js';
 export * from './config/syntax.js';
 export * from './config/color.js';
 export * from './zoom.js';

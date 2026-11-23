@@ -11,6 +11,7 @@ const COMMANDS: &[&str] = &[
     "compile",
     "cancel_compile",
     "read_synctex",
+    "cached_synctex",
     "push_review",
     "set_token",
     "has_token",

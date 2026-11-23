@@ -22,6 +22,7 @@
     "allow-compile",
     "allow-cancel-compile",
     "allow-read-synctex",
+    "allow-cached-synctex",
     "allow-push-review",
     "allow-set-token",
     "allow-has-token",

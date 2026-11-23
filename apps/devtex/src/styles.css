@@ -50,6 +50,12 @@ body {
   display: flex;
   gap: 2px;
 }
+.dt-tb-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 3px 5px;
+  background: var(--border);
+}
 .dt-toolbar + .dt-toolbar {
   border-left: 1px solid var(--border);
   padding-left: 8px;
@@ -360,6 +366,85 @@ figcaption {
 }
 
 /* pdf */
+/* beamer slides */
+.dt-frame {
+  margin: 1em 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  aspect-ratio: 16 / 10;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--bg);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.dt-frame-title {
+  padding: 0.45em 0.8em;
+  font-size: 1.25em;
+  font-weight: 600;
+  background: var(--accent);
+  color: white;
+}
+.dt-frame-subtitle {
+  padding: 0 0.8em 0.4em;
+  font-size: 0.95em;
+  background: var(--accent);
+  color: color-mix(in srgb, white 85%, var(--accent));
+}
+.dt-frame-body {
+  flex: 1;
+  padding: 0.6em 1em;
+}
+.dt-frame-body > .dt-frame-title {
+  margin: -0.6em -1em 0.6em;
+}
+.dt-frame-body > .dt-frame-subtitle {
+  margin: -0.6em -1em 0.6em;
+}
+.dt-titlepage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8em;
+  color: var(--muted);
+  font-style: italic;
+}
+.dt-alert {
+  color: #c0392b;
+}
+.dt-structure {
+  color: var(--accent);
+}
+.dt-beamer-block {
+  margin: 0.5em 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.dt-beamer-block-title {
+  padding: 0.2em 0.6em;
+  font-weight: 600;
+  color: white;
+  background: var(--accent);
+}
+.dt-alertblock .dt-beamer-block-title {
+  background: #c0392b;
+}
+.dt-exampleblock .dt-beamer-block-title {
+  background: #2e7d32;
+}
+.dt-beamer-block-body {
+  padding: 0.3em 0.6em;
+}
+.dt-columns {
+  display: flex;
+  gap: 1em;
+}
+.dt-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
 #pdf {
   background: #888;
   padding: 12px;
@@ -594,4 +679,10 @@ body[data-platform='ios'] #outline {
   text-align: center;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+}
+.dt-pdf-empty {
+  padding: 2em;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
 }

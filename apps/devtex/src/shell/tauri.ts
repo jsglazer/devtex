@@ -110,6 +110,8 @@ export const tauriShell: Shell = {
     }),
   cancelCompile: () => call<void>('cancel_compile'),
   readSynctex: async (path) => new Uint8Array(await call<ArrayBuffer>('read_synctex', { path })),
+  cachedSynctex: async (root) =>
+    (await platformInfo()).os === 'macos' ? call<string | null>('cached_synctex', { root }) : null,
   push: (entries: PushRequestEntry[], msg: string, allowUntracked: boolean) =>
     call<PushOutcome>('push_review', { entries, message: msg, allowUntracked }),
   hasToken: () => call<boolean>('has_token'),

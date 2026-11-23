@@ -77,6 +77,7 @@ pub fn run() {
             commands::compile,
             commands::cancel_compile,
             commands::read_synctex,
+            commands::cached_synctex,
             commands::push_review,
             commands::set_token,
             commands::has_token,

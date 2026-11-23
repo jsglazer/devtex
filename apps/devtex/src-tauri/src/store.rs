@@ -1,6 +1,6 @@
 //! Small persistent stores in the app's own data/config folders:
 //! - push state: repo path -> blob SHA DevTex last pushed (remote-change check),
-//! - config files: settings.jsonc, keymap.json, toolbars.json, syntax/*.json.
+//! - config files: settings.jsonc, keymap.json, toolbars.json, recent.json, syntax/*.json.
 //! - secrets: the GitHub token in the Keychain under `github-papers-token`.
 
 use std::collections::BTreeMap;
@@ -38,7 +38,12 @@ pub fn record_push(file: &Path, key: &str, shas: &BTreeMap<String, String>) -> A
     StdFileStore.write_atomic(file, &json)
 }
 
-pub const CONFIG_FILES: [&str; 3] = ["settings.jsonc", "keymap.json", "toolbars.json"];
+pub const CONFIG_FILES: [&str; 4] = [
+    "settings.jsonc",
+    "keymap.json",
+    "toolbars.json",
+    "recent.json",
+];
 
 /// Resolve a config file name inside the config dir. Only the fixed names and
 /// `syntax/<name>.json` are allowed.
@@ -209,6 +214,7 @@ mod tests {
     fn config_names_are_whitelisted() {
         let d = tempdir().unwrap();
         assert!(config_path(d.path(), "settings.jsonc").is_ok());
+        assert!(config_path(d.path(), "recent.json").is_ok());
         assert!(config_path(d.path(), "syntax/r-code.json").is_ok());
         for bad in [
             "../x",

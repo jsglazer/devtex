@@ -15,10 +15,13 @@ import {
 } from '@codemirror/commands';
 import {
   bracketMatching,
+  foldEffect,
+  foldedRanges,
   foldGutter,
   foldKeymap,
   foldCode,
   unfoldCode,
+  unfoldEffect,
 } from '@codemirror/language';
 import { lintKeymap } from '@codemirror/lint';
 import {
@@ -30,7 +33,7 @@ import {
   searchKeymap,
   selectNextOccurrence,
 } from '@codemirror/search';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension, type Text } from '@codemirror/state';
 import {
   crosshairCursor,
   drawSelection,
@@ -216,6 +219,21 @@ export class SourceEditor {
     }
   }
 
+  /**
+   * Fold (or unfold) the preamble: everything after the first line up to the
+   * line before \begin{document}. Returns false when the file has no preamble.
+   */
+  togglePreamble(): boolean {
+    const range = preambleRange(this.view.state.doc);
+    if (range === null) return false;
+    let folded = false;
+    foldedRanges(this.view.state).between(range.from, range.to, (from, to) => {
+      if (from === range.from && to === range.to) folded = true;
+    });
+    this.view.dispatch({ effects: (folded ? unfoldEffect : foldEffect).of(range) });
+    return true;
+  }
+
   cursorLine(): number {
     return this.view.state.doc.lineAt(this.view.state.selection.main.head).number;
   }
@@ -242,4 +260,16 @@ export class SourceEditor {
   forget(path: string): void {
     this.states.delete(path);
   }
+}
+
+/** Preamble fold range: end of line 1 to the end of the line before \begin{document}. */
+export function preambleRange(doc: Text): { from: number; to: number } | null {
+  for (let n = 1; n <= doc.lines; n++) {
+    const text = doc.line(n).text;
+    if (/^\s*\\begin\s*\{document\}/.test(text)) {
+      if (n <= 2) return null;
+      return { from: doc.line(1).to, to: doc.line(n - 1).to };
+    }
+  }
+  return null;
 }

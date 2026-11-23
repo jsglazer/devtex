@@ -1,5 +1,11 @@
 /** Outline, problems, toolbars, file tabs, status bar and the iOS keyboard accessory bar. */
-import type { Diagnostic, LogEntry, OutlineItem, Toolbar } from '@devtex/core';
+import {
+  isSeparator,
+  type Diagnostic,
+  type LogEntry,
+  type OutlineItem,
+  type Toolbar,
+} from '@devtex/core';
 import type { RenderTimings } from '@devtex/core/render';
 import type { CommandRegistry } from './commands.js';
 import { el } from './ui.js';
@@ -103,8 +109,16 @@ export function renderToolbars(
   for (const bar of bars) {
     if (!bar.visible) continue;
     const div = el('div', { class: 'dt-toolbar', 'data-toolbar': bar.id, title: bar.title });
+    let pendingSep = false;
     for (const item of bar.items) {
+      if (isSeparator(item)) {
+        // collapse leading, trailing and repeated dividers (e.g. around unavailable commands)
+        pendingSep = div.childElementCount > 0;
+        continue;
+      }
       if (!commands.isAvailable(item.command)) continue;
+      if (pendingSep) div.append(el('span', { class: 'dt-tb-sep', 'aria-hidden': 'true' }));
+      pendingSep = false;
       const b = el(
         'button',
         { title: commands.title(item.command) },

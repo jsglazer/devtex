@@ -94,6 +94,11 @@ pub fn menu_spec() -> Vec<Submenu> {
                     "Open Project Folder…",
                     Some("CmdOrCtrl+O"),
                 ),
+                cmd(
+                    "file.openRecent",
+                    "Open Recent Project…",
+                    Some("CmdOrCtrl+Shift+O"),
+                ),
                 cmd("file.save", "Save", Some("CmdOrCtrl+S")),
                 Item::Separator,
                 Item::System(CloseWindow),
@@ -186,7 +191,7 @@ pub fn menu_spec() -> Vec<Submenu> {
                 cmd("pane.focusEditor", "Focus Editor", Some("CmdOrCtrl+1")),
                 cmd(
                     "pane.togglePreview",
-                    "Toggle HTML Preview",
+                    "Toggle Live Preview",
                     Some("CmdOrCtrl+2"),
                 ),
                 cmd("pane.togglePdf", "Toggle PDF", Some("CmdOrCtrl+3")),
@@ -200,6 +205,11 @@ pub fn menu_spec() -> Vec<Submenu> {
                     "view.toggleToolbars",
                     "Show/Hide Toolbars",
                     Some("CmdOrCtrl+Alt+T"),
+                ),
+                cmd(
+                    "view.togglePreamble",
+                    "Show/Hide Preamble",
+                    Some("CmdOrCtrl+Alt+P"),
                 ),
                 Item::Separator,
                 cmd("view.zoomIn", "Zoom In", Some("CmdOrCtrl+=")),
@@ -348,6 +358,8 @@ mod tests {
             assert!(id.contains('.'), "{id}");
         }
         assert!(command_ids().contains("compile.pdf"));
+        assert!(command_ids().contains("file.openRecent"));
+        assert!(command_ids().contains("view.togglePreamble"));
         for id in [
             "view.zoomIn",
             "view.zoomOut",

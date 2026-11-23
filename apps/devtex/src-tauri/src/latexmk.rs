@@ -56,6 +56,19 @@ pub fn project_cache_dir(cache_base: &Path, root_abs: &Path) -> PathBuf {
     cache_base.join("DevTex").join(hex)
 }
 
+/// SyncTeX data from an earlier compile for the PDF currently next to the
+/// root file, so a PDF opened from disk still supports forward/inverse
+/// search. Only returned when the cached PDF matches the project PDF's size
+/// (i.e. the project PDF came from that compile, not from another tool).
+pub fn cached_synctex(cache_base: &Path, root_abs: &Path) -> Option<PathBuf> {
+    let stem = root_abs.file_stem()?.to_string_lossy().into_owned();
+    let outdir = project_cache_dir(cache_base, root_abs);
+    let syn = outdir.join(format!("{stem}.synctex.gz"));
+    let built = std::fs::metadata(outdir.join(format!("{stem}.pdf"))).ok()?;
+    let shown = std::fs::metadata(root_abs.parent()?.join(format!("{stem}.pdf"))).ok()?;
+    (syn.is_file() && built.len() == shown.len()).then_some(syn)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcessOutput {
     pub status: Option<i32>,
@@ -378,6 +391,29 @@ mod tests {
         assert_ne!(a, c);
         assert!(a.starts_with("/cache/DevTex"));
         assert_eq!(a.file_name().unwrap().len(), 16);
+    }
+
+    #[test]
+    fn cached_synctex_only_when_pdf_matches_the_cached_build() {
+        let d = tempfile::tempdir().unwrap();
+        let cache = d.path().join("cache");
+        let proj = d.path().join("paper");
+        std::fs::create_dir_all(&proj).unwrap();
+        let root = proj.join("main.tex");
+        std::fs::write(&root, "x").unwrap();
+        assert_eq!(cached_synctex(&cache, &root), None);
+        let out = project_cache_dir(&cache, &root);
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("main.pdf"), "PDFDATA").unwrap();
+        std::fs::write(out.join("main.synctex.gz"), "gz").unwrap();
+        assert_eq!(cached_synctex(&cache, &root), None, "no project PDF yet");
+        std::fs::write(proj.join("main.pdf"), "PDFDATA").unwrap();
+        assert_eq!(
+            cached_synctex(&cache, &root),
+            Some(out.join("main.synctex.gz"))
+        );
+        std::fs::write(proj.join("main.pdf"), "a different, external PDF").unwrap();
+        assert_eq!(cached_synctex(&cache, &root), None);
     }
 
     #[test]
