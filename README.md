@@ -13,23 +13,29 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
 - Auto-`\item`: Enter inside `itemize`/`enumerate`/`description` starts a new item; Enter on an empty item ends the list.
 - Completion for commands (including your own `\newcommand`s), environments, `\ref`/`\label` and `\cite` keys, plus grouped palettes for sectioning, environments, text size and alignment.
 - Diagnostics for undefined `\ref`s, unknown citekeys and structural errors, plus latexmk warnings on macOS.
-- Outline (sections, figures, tables, labels) that updates as you type, file tabs, and a Problems panel.
+- Outline (sections, Beamer frames, figures, tables, labels) that updates as you type, file tabs, and a Problems panel. Frames are listed under their section, titled from `{…}`, `\frametitle` or `\titlepage`.
+- Renaming either end of an environment renames the other: change `\begin{enumerate}` to `\begin{itemize}` and the `\end` follows (and the other way round), in one undo step.
+- Move Line Up/Down (Edit menu, default ⌃⌥↑/⌃⌥↓, remappable in `keymap.json`) moves the current line or selected lines.
+- Word wrap on/off: View ▸ Toggle Word Wrap (⌥⌘W), saved to `settings.jsonc`.
 - Show/Hide Preamble (toolbar **Preamble**, View ▸ Show/Hide Preamble, ⌥⌘P) folds everything before `\begin{document}` into one line.
 
 **Instant HTML preview (Live)**
 - Renders prose, sectioning, lists, emphasis, citations/refs, `tabular`, inline and display math (`equation`, `align`, …), theorem-like environments and floats.
 - Uses your macros: `\newcommand`, `\renewcommand`, `\DeclareMathOperator` and argument-free `\def` from the preamble and every included file.
-- Beamer: frames render as slides with their title and subtitle (`\begin{frame}{…}{…}`, `\frametitle`, `\framesubtitle`, `\frame{…}`), plus `block`/`alertblock`/`exampleblock`, `columns`/`column` (and `\column{0.5\textwidth}`), `\alert` and a title-page placeholder. Overlay specs (`\item<2->`, `\only<…>`, `\pause`, …) are ignored, so every overlay's content shows at once.
+- Beamer: frames render as slides with their title and subtitle (`\begin{frame}{…}{…}`, `\frametitle`, `\framesubtitle`, `\frame{…}`), plus `block`/`alertblock`/`exampleblock`, `columns`/`column` (and `\column{0.5\textwidth}`), `\alert`, and a real title page (`\titlepage` / `\maketitle` built from `\title`, `\subtitle`, `\author`, `\institute` and `\date`). Overlay specs (`\item<2->`, `\only<…>`, `\pause`, …) are ignored, so every overlay's content shows at once.
 - TikZ, unknown macros and unsupported environments show a labelled placeholder with the source line; they never break the preview.
 - Incremental rendering in a Web Worker: only edited blocks are re-parsed and re-typeset. On a 2,725-line, 9-file test project a single-block edit renders well under the 250 ms target (enforced by a test).
 - Two-way sync: moving the cursor highlights the matching element in whichever view is showing (Live or PDF), and clicking either view jumps to the source line.
+- **Scroll Lock** (button on the Preview/PDF bar, or View ▸ Toggle Scroll Lock): the Live preview or PDF scrolls along with the editor.
+- **− / % / +** on the right of the Preview/PDF bar zoom whichever view is showing (Live text size or PDF; **Fit** fits the PDF to the pane width).
+- Drag the divider between the editor and the preview to resize the panes; double-click it to reset to 50/50. The split is remembered.
 
 **Multi-file projects**
 - Root detection from `% !TEX root = …`, otherwise from the `\input`/`\include` graph; engine from `% !TEX program = …` (pdflatex, xelatex, lualatex).
 
 **PDF (macOS)**
 - Compiles with your installed `latexmk` (found on your login shell PATH) using `-synctex=1 -interaction=nonstopmode -file-line-error`. Aux files go to `~/Library/Caches/DevTex/<project>/`; only the final PDF is copied next to the root `.tex`, so nothing extra enters your Obsidian vault.
-- pdf.js viewer with SyncTeX forward and inverse search, using a pure TypeScript SyncTeX parser (no `synctex` CLI). A PDF already on disk when you open the project uses the SyncTeX data from its last DevTex compile, so sync works without recompiling.
+- pdf.js viewer with SyncTeX forward and inverse search, using a pure TypeScript SyncTeX parser (no `synctex` CLI). The highlight is clipped to the page. In Beamer, SyncTeX records a whole frame against its `\end{frame}` line, so forward search outlines the whole slide. A PDF already on disk when you open the project uses the SyncTeX data from its last DevTex compile, so sync works without recompiling.
 - If the PDF is deleted on disk, the PDF pane clears and prompts you to compile.
 - Clickable compile errors and warnings.
 
