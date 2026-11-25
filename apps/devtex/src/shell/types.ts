@@ -18,6 +18,15 @@ export interface PlatformInfo {
   initialCommands?: string | null;
 }
 
+/** A Finder open request (double-click, Open With, Dock drop), queued by the Rust side. */
+export interface OpenRequest {
+  /** Canonical absolute path (same form as `ProjectInfo.root`). */
+  path: string;
+  isDir: boolean;
+  /** Folder to open as the project (for a subfile, the folder of its main document). */
+  project: string;
+}
+
 export interface ProjectInfo {
   root: string;
   name: string;
@@ -113,6 +122,10 @@ export interface Shell {
   configLocation(): Promise<string>;
   onFsChanged(cb: (paths: string[]) => void): Promise<() => void>;
   onMenu(cb: (command: string) => void): Promise<() => void>;
+  /** Finder handed over files/folders; call `takeOpenedPaths` to get them. */
+  onOpenFiles(cb: () => void): Promise<() => void>;
+  /** Drain Finder open requests queued by the shell (macOS; empty elsewhere). */
+  takeOpenedPaths(): Promise<OpenRequest[]>;
   confirm(text: string, opts?: ConfirmOptions): Promise<boolean>;
   alert(text: string, title?: string): Promise<void>;
   /** Zoom the whole webview (interface zoom). */

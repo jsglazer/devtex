@@ -29,6 +29,10 @@ pub struct AppState {
     pub runner: Arc<crate::latexmk::SystemRunner>,
     #[cfg(target_os = "macos")]
     pub paths: Arc<crate::latexmk::PathCache>,
+    /// Files/folders handed over by Finder (double-click, Open With, drop on
+    /// the Dock icon) that the frontend has not taken yet. Finder can deliver
+    /// them before the webview is listening, so they wait here.
+    pub opened: Mutex<Vec<OpenRequest>>,
 }
 
 impl AppState {
@@ -383,7 +387,7 @@ pub fn platform() -> PlatformInfo {
 }
 
 /// Commands registered with the app (also the ACL list in build.rs).
-pub const COMMANDS: [&str; 20] = [
+pub const COMMANDS: [&str; 21] = [
     "platform",
     "open_project",
     "list_files",
@@ -404,4 +408,258 @@ pub const COMMANDS: [&str; 20] = [
     "write_config",
     "list_syntax_files",
     "config_location",
+    "take_opened_paths",
 ];
+
+// ---------- Finder open requests (macOS) ----------
+
+/// Event the frontend listens on; it then calls `take_opened_paths`.
+pub const OPEN_EVENT: &str = "devtex://open-files";
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenRequest {
+    /// Canonical absolute path (matches `ProjectInfo.root`'s form).
+    pub path: String,
+    pub is_dir: bool,
+    /// Folder to open as the project: the folder itself, or for a file the
+    /// folder holding its main document (see [`project_dir_for`]).
+    pub project: String,
+}
+
+/// Turn a path from Finder into an open request: folders open as projects;
+/// files only if DevTex edits them (.tex/.bib/.sty/.cls). Missing paths and
+/// other file types are dropped.
+pub fn open_request(path: &std::path::Path) -> Option<OpenRequest> {
+    let canon = path.canonicalize().ok()?;
+    let is_dir = canon.is_dir();
+    if !is_dir && !(canon.is_file() && fsguard::is_project_file(&canon)) {
+        return None;
+    }
+    let project = if is_dir {
+        canon.clone()
+    } else {
+        project_dir_for(
+            &canon,
+            std::env::var_os("HOME").map(PathBuf::from).as_deref(),
+        )
+    };
+    Some(OpenRequest {
+        path: canon.display().to_string(),
+        is_dir,
+        project: project.display().to_string(),
+    })
+}
+
+/// How many folders above a subfile to search for its main document.
+const MAX_ROOT_SEARCH_LEVELS: usize = 3;
+
+fn has_documentclass(text: &str) -> bool {
+    text.lines()
+        .map(str::trim_start)
+        .any(|l| !l.starts_with('%') && l.contains("\\documentclass"))
+}
+
+/// `% !TEX root = <path>` (TeXShop/TeXstudio convention), relative to the file's folder.
+fn magic_root(text: &str) -> Option<&str> {
+    text.lines().take(20).find_map(|l| {
+        let l = l.trim_start().strip_prefix('%')?.trim_start();
+        let rest = l.strip_prefix("!TEX")?.trim_start().strip_prefix("root")?;
+        let v = rest.trim_start().strip_prefix('=')?.trim();
+        (!v.is_empty()).then_some(v)
+    })
+}
+
+/// The folder to open as the project for a .tex/.bib/.sty/.cls file opened
+/// from Finder, so a chapter in `paper/ch/` opens the `paper/` project:
+/// 1. `% !TEX root` pointing into an ancestor folder → that root's folder;
+/// 2. the file has its own `\documentclass` (or isn't .tex) → its folder;
+/// 3. the nearest ancestor (≤ 3 up; not above `home` for files inside it, never `/`) holding a .tex file
+///    with `\documentclass`;
+/// 4. otherwise its own folder.
+pub fn project_dir_for(file: &std::path::Path, home: Option<&std::path::Path>) -> PathBuf {
+    let Some(dir) = file.parent().map(std::path::Path::to_path_buf) else {
+        return file.to_path_buf();
+    };
+    if file.extension().and_then(|e| e.to_str()) != Some("tex") {
+        return dir;
+    }
+    let text = std::fs::read_to_string(file).unwrap_or_default();
+    if let Some(root) = magic_root(&text) {
+        if let Some(root_dir) = dir
+            .join(root)
+            .canonicalize()
+            .ok()
+            .and_then(|r| r.parent().map(std::path::Path::to_path_buf))
+        {
+            if file.starts_with(&root_dir) {
+                return root_dir;
+            }
+        }
+    }
+    if has_documentclass(&text) {
+        return dir;
+    }
+    let mut cur = dir.as_path();
+    for _ in 0..MAX_ROOT_SEARCH_LEVELS {
+        let Some(up) = cur.parent() else { break };
+        // never search `/`, and never climb out of home for a file inside it
+        if up.parent().is_none() || home.is_some_and(|h| file.starts_with(h) && !up.starts_with(h))
+        {
+            break;
+        }
+        let has_main = std::fs::read_dir(up)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|e| {
+                let p = e.path();
+                p.extension().and_then(|x| x.to_str()) == Some("tex")
+                    && std::fs::read_to_string(&p).is_ok_and(|t| has_documentclass(&t))
+            });
+        if has_main {
+            return up.to_path_buf();
+        }
+        cur = up;
+    }
+    dir
+}
+
+/// Queue paths from a Finder open event and tell the frontend to take them.
+pub fn queue_opened(app: &AppHandle, paths: Vec<PathBuf>) {
+    use tauri::Emitter;
+    let reqs: Vec<OpenRequest> = paths.iter().filter_map(|p| open_request(p)).collect();
+    if reqs.is_empty() {
+        return;
+    }
+    let state = app.state::<AppState>();
+    if let Ok(mut g) = state.opened.lock() {
+        g.extend(reqs);
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+    let _ = app.emit(OPEN_EVENT, ());
+}
+
+#[tauri::command]
+pub fn take_opened_paths(state: State<'_, AppState>) -> Vec<OpenRequest> {
+    match state.opened.lock() {
+        Ok(mut g) => std::mem::take(&mut *g),
+        Err(_) => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod open_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("devtex-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d.canonicalize().unwrap()
+    }
+
+    fn write(p: &Path, text: &str) {
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+
+    const MAIN: &str =
+        "\\documentclass{article}\n\\begin{document}\\input{ch/one}\\end{document}\n";
+
+    #[test]
+    fn open_request_accepts_folders_and_project_files_only() {
+        let dir = tmp("open");
+        write(&dir.join("paper.tex"), MAIN);
+        write(&dir.join("paper.pdf"), "x");
+        let d = dir.display().to_string();
+        assert_eq!(
+            open_request(&dir),
+            Some(OpenRequest {
+                path: d.clone(),
+                is_dir: true,
+                project: d.clone()
+            })
+        );
+        assert_eq!(
+            open_request(&dir.join("paper.tex")),
+            Some(OpenRequest {
+                path: format!("{d}/paper.tex"),
+                is_dir: false,
+                project: d.clone()
+            })
+        );
+        assert_eq!(open_request(&dir.join("paper.pdf")), None);
+        assert_eq!(open_request(&dir.join("missing.tex")), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn subfile_opens_the_folder_of_its_main_document() {
+        let dir = tmp("sub");
+        write(&dir.join("main.tex"), MAIN);
+        write(&dir.join("ch/one.tex"), "Chapter one\n");
+        assert_eq!(project_dir_for(&dir.join("ch/one.tex"), Some(&dir)), dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn magic_root_comment_wins() {
+        let dir = tmp("magic");
+        write(&dir.join("paper/main.tex"), MAIN);
+        write(
+            &dir.join("paper/a/b/c/d/deep.tex"),
+            "% !TEX root = ../../../../main.tex\nx\n",
+        );
+        assert_eq!(
+            project_dir_for(&dir.join("paper/a/b/c/d/deep.tex"), Some(&dir)),
+            dir.join("paper")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn standalone_and_orphan_files_open_their_own_folder() {
+        let dir = tmp("own");
+        write(&dir.join("main.tex"), MAIN);
+        write(&dir.join("talk/slides.tex"), "\\documentclass{beamer}\n");
+        write(&dir.join("talk/refs.bib"), "@book{x,}\n");
+        assert_eq!(
+            project_dir_for(&dir.join("talk/slides.tex"), Some(&dir)),
+            dir.join("talk")
+        );
+        assert_eq!(
+            project_dir_for(&dir.join("talk/refs.bib"), Some(&dir)),
+            dir.join("talk")
+        );
+        // the search never climbs above `home`
+        write(&dir.join("h/notes/part.tex"), "no class\n");
+        assert_eq!(
+            project_dir_for(&dir.join("h/notes/part.tex"), Some(&dir.join("h"))),
+            dir.join("h/notes")
+        );
+        // a file outside home (e.g. an external volume) still finds its main document
+        write(&dir.join("ext/ch/two.tex"), "no class\n");
+        write(&dir.join("ext/thesis.tex"), MAIN);
+        assert_eq!(
+            project_dir_for(
+                &dir.join("ext/ch/two.tex"),
+                Some(Path::new("/nonexistent-home"))
+            ),
+            dir.join("ext")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn commented_documentclass_does_not_count() {
+        assert!(!has_documentclass("% \\documentclass{article}\n"));
+        assert!(has_documentclass("  \\documentclass[11pt]{article}\n"));
+        assert_eq!(magic_root("%!TEX root=../main.tex\n"), Some("../main.tex"));
+        assert_eq!(magic_root("% !TEX program = xelatex\n"), None);
+    }
+}

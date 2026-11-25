@@ -35,6 +35,7 @@ fn app_state() -> AppState {
         runner: Arc::new(latexmk::SystemRunner::default()),
         #[cfg(target_os = "macos")]
         paths: Arc::new(latexmk::PathCache::default()),
+        opened: Mutex::new(Vec::new()),
     }
 }
 
@@ -87,12 +88,25 @@ pub fn run() {
             commands::write_config,
             commands::list_syntax_files,
             commands::config_location,
+            commands::take_opened_paths,
         ])
-        .run(tauri::generate_context!());
-    if let Err(e) = result {
-        eprintln!("DevTex failed to start: {e}");
-        std::process::exit(1);
-    }
+        .build(tauri::generate_context!());
+    let app = match result {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("DevTex failed to start: {e}");
+            std::process::exit(1);
+        }
+    };
+    app.run(|_handle, _event| {
+        // Finder double-click / Open With / Dock drop arrive as an Apple Event,
+        // not argv; without this the app launches and nothing opens.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = _event {
+            let paths = urls.iter().filter_map(|u| u.to_file_path().ok()).collect();
+            commands::queue_opened(_handle, paths);
+        }
+    });
 }
 
 #[cfg(test)]

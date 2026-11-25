@@ -16,6 +16,7 @@ import type {
 } from '@devtex/core';
 import type {
   Shell,
+  OpenRequest,
   PlatformInfo,
   ProjectInfo,
   CompileOutcome,
@@ -122,6 +123,9 @@ export const tauriShell: Shell = {
   configLocation: () => call<string>('config_location'),
   onFsChanged: (cb) => listen<string[]>('devtex://fs-changed', (e) => cb(e.payload)),
   onMenu: (cb) => listen<string>('devtex://menu', (e) => cb(e.payload)),
+  onOpenFiles: (cb) => listen('devtex://open-files', () => cb()),
+  takeOpenedPaths: async () =>
+    (await platformInfo()).os === 'macos' ? call<OpenRequest[]>('take_opened_paths') : [],
   confirm: (text, opts) =>
     ask(text, {
       title: opts?.title ?? 'DevTex',

@@ -36,7 +36,8 @@ import {
   type SyntaxDefinition,
   type Toolbar,
 } from '@devtex/core';
-import type { PlatformInfo, ProjectInfo, Shell } from '../shell/types.js';
+import type { OpenRequest, PlatformInfo, ProjectInfo, Shell } from '../shell/types.js';
+import { planOpen } from './finder-open.js';
 import { errorText } from '../shell/types.js';
 import { CommandRegistry } from './commands.js';
 import { CM_COMMANDS, SourceEditor } from './editor.js';
@@ -109,6 +110,8 @@ export class App {
   private compiling = false;
   /** Recently opened project folders, newest first (recent.json, macOS only). */
   private recent: string[] = [];
+  /** Serializes Finder open requests so overlapping events don't race openProject. */
+  private finderQueue: Promise<void> = Promise.resolve();
   /** Scroll Lock: the Preview/PDF follows the editor's scroll position. */
   private scrollLock = localStorage.getItem('devtex.scrollLock') === '1';
   private scrollFrame: number | null = null;
@@ -279,6 +282,11 @@ export class App {
     }
     if (typeof this.platform.initialProject === 'string')
       await this.openProject(this.platform.initialProject);
+    // Finder double-click / Open With / Dock drop: requests that arrived during
+    // startup are queued on the Rust side; later ones announce themselves.
+    await this.shell.onOpenFiles(() => this.drainFinderOpens());
+    this.drainFinderOpens();
+    await this.finderQueue;
     if (typeof this.platform.initialCommands === 'string') {
       // debug-only QA hook: command ids, or `goto:<line>` to move the editor cursor
       for (const id of this.platform.initialCommands.split(',')) {
@@ -383,6 +391,25 @@ export class App {
     this.setStatus(
       `${this.project.name}${this.project.vaultRoot === null ? '' : ` — vault: ${this.project.vaultRelative === '' ? '/' : this.project.vaultRelative}`}`,
     );
+  }
+
+  private drainFinderOpens(): void {
+    this.finderQueue = this.finderQueue
+      .then(async () => {
+        for (const req of await this.shell.takeOpenedPaths()) await this.openFromFinder(req);
+      })
+      .catch((e: unknown) => notice(errorText(e)));
+  }
+
+  private async openFromFinder(req: OpenRequest): Promise<void> {
+    const plan = planOpen(req, this.project?.root ?? null);
+    if (plan.project !== null && plan.project !== this.project?.root) {
+      await this.openProject(plan.project);
+      if (this.project?.root !== plan.project) return; // cancelled (unsaved changes) or failed
+    }
+    if (plan.file === null) return;
+    if (this.session.buffers.has(plan.file)) this.openFile(plan.file);
+    else notice(`DevTex can't open ${plan.file} here.`);
   }
 
   openFile(path: string): void {

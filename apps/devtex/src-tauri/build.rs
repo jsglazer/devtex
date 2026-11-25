@@ -21,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "write_config",
     "list_syntax_files",
     "config_location",
+    "take_opened_paths",
 ];
 
 fn main() {

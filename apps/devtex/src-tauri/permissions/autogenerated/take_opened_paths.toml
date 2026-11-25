@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-take-opened-paths"
+description = "Enables the take_opened_paths command without any pre-configured scope."
+commands.allow = ["take_opened_paths"]
+
+[[permission]]
+identifier = "deny-take-opened-paths"
+description = "Denies the take_opened_paths command without any pre-configured scope."
+commands.deny = ["take_opened_paths"]

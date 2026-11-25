@@ -31,6 +31,7 @@
     "allow-read-config",
     "allow-write-config",
     "allow-list-syntax-files",
-    "allow-config-location"
+    "allow-config-location",
+    "allow-take-opened-paths"
   ]
 }
