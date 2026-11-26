@@ -25,9 +25,12 @@ pub struct AppState {
     pub http: reqwest::Client,
     #[cfg(target_os = "macos")]
     pub watcher: Mutex<Option<crate::watcher::mac::ProjectWatcher>>,
-    /// Watches `<config>/themes` for style-profile hot reload.
+    /// Watches `<config>/themes` for user.css hot reload.
     #[cfg(target_os = "macos")]
     pub theme_watcher: Mutex<Option<crate::watcher::mac::ProjectWatcher>>,
+    /// Watches DevStyle's shared folder (another app changed the style).
+    #[cfg(target_os = "macos")]
+    pub devstyle_watcher: Mutex<Option<crate::watcher::mac::ProjectWatcher>>,
     #[cfg(target_os = "macos")]
     pub runner: Arc<crate::latexmk::SystemRunner>,
     #[cfg(target_os = "macos")]
@@ -350,6 +353,49 @@ pub async fn list_theme_files(app: AppHandle) -> AppResult<Vec<String>> {
 }
 
 #[tauri::command]
+pub async fn delete_theme_file(app: AppHandle, name: String) -> AppResult<()> {
+    store::delete_theme_file(&config_dir(&app)?, &name)
+}
+
+/// DevStyle's shared folder (macOS only: iOS has no Mac App Group container).
+pub(crate) fn devstyle_dir(app: &AppHandle) -> AppResult<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = app.path().home_dir().map_err(|e| AppError::Io {
+            message: e.to_string(),
+        })?;
+        Ok(crate::devstyle::folder(&home))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err(AppError::NotSupported {
+            message: "the shared DevStyle folder is macOS-only".into(),
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn devstyle_read(app: AppHandle, path: String) -> AppResult<Option<String>> {
+    crate::devstyle::read(&devstyle_dir(&app)?, &path)
+}
+
+#[tauri::command]
+pub async fn devstyle_write(app: AppHandle, path: String, text: String) -> AppResult<()> {
+    crate::devstyle::write(&devstyle_dir(&app)?, &path, &text)
+}
+
+#[tauri::command]
+pub async fn devstyle_list(app: AppHandle, dir: String) -> AppResult<Vec<String>> {
+    crate::devstyle::list(&devstyle_dir(&app)?, &dir)
+}
+
+#[tauri::command]
+pub async fn devstyle_location(app: AppHandle) -> AppResult<String> {
+    Ok(devstyle_dir(&app)?.display().to_string())
+}
+
+#[tauri::command]
 pub async fn config_location(app: AppHandle) -> AppResult<String> {
     Ok(config_dir(&app)?.display().to_string())
 }
@@ -444,7 +490,7 @@ pub fn platform() -> PlatformInfo {
 }
 
 /// Commands registered with the app (also the ACL list in build.rs).
-pub const COMMANDS: [&str; 25] = [
+pub const COMMANDS: [&str; 30] = [
     "platform",
     "open_project",
     "list_files",
@@ -465,6 +511,11 @@ pub const COMMANDS: [&str; 25] = [
     "write_config",
     "list_syntax_files",
     "list_theme_files",
+    "delete_theme_file",
+    "devstyle_read",
+    "devstyle_write",
+    "devstyle_list",
+    "devstyle_location",
     "config_location",
     "open_config_folder",
     "system_appearance",
@@ -598,6 +649,8 @@ pub fn queue_opened(app: &AppHandle, paths: Vec<PathBuf>) {
         g.extend(reqs);
     }
     if let Some(w) = app.get_webview_window("main") {
+        // unminimize is desktop-only (iOS has no minimized windows)
+        #[cfg(desktop)]
         let _ = w.unminimize();
         let _ = w.set_focus();
     }

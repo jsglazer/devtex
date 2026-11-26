@@ -1,0 +1,78 @@
+/* devtex: appearance=dark */
+/*
+ * DevTex style profile: Default Dark. DevTex's standard dark look.
+ * This file is yours to edit: DevTex never overwrites it. Delete it to get the
+ * built-in version back. Set any of the variables below (the stable contract,
+ * see the README), and add any other CSS you like.
+ */
+:root {
+  /* app */
+  --dt-bg: #1e1e20;
+  --dt-fg: #e8e8ed;
+  --dt-muted: #98989d;
+  --dt-border: #3a3a3c;
+  --dt-panel: #2a2a2d;
+  --dt-accent: #8f9bff;
+  --dt-accent-fg: #111122;
+  --dt-error: #ff6b6b;
+  --dt-warning: #e0a030;
+  --dt-success: #5cb860;
+  --dt-sync: rgba(255, 200, 0, 0.25);
+  --dt-shadow: rgba(0, 0, 0, 0.6);
+  --dt-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --dt-font-size: 13px;
+  --dt-mono-font: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* editor */
+  --dt-editor-font: 'SF Mono', Menlo, monospace;
+  --dt-editor-size: 14px;
+  --dt-editor-line-height: 1.5;
+  --dt-editor-bg: #1e1e20;
+  --dt-editor-fg: #e8e8ed;
+  --dt-editor-gutter: #232326;
+  --dt-editor-cursor: #e8e8ed;
+  --dt-editor-selection: rgba(143, 155, 255, 0.25);
+  --dt-editor-active-line: rgba(160, 160, 220, 0.1);
+  --dt-editor-matching-bracket: rgba(80, 200, 120, 0.35);
+  --dt-editor-selection-match: rgba(255, 210, 0, 0.25);
+  --dt-editor-broken: rgba(230, 60, 60, 0.35);
+  --dt-editor-env-pair: rgba(80, 160, 255, 0.25);
+
+  /* syntax */
+  --dt-syntax-command: #c4a7ff;
+  --dt-syntax-env: #7cc4f8;
+  --dt-syntax-atom: #f0b06a;
+  --dt-syntax-comment: #8b919a;
+  --dt-syntax-math: #6fd3a8;
+  --dt-syntax-number: #ff8a80;
+  --dt-syntax-bracket: #a0aec0;
+  --dt-syntax-meta: #f48fb1;
+  --dt-syntax-error: #ff6b6b;
+
+  /* preview */
+  --dt-preview-font: 'Charter', 'Iowan Old Style', Georgia, serif;
+  --dt-preview-size: 16px;
+  --dt-preview-line-height: 1.55;
+  --dt-preview-heading-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --dt-preview-fg: #e8e8ed;
+  --dt-preview-bg: #1e1e20;
+  --dt-preview-link: #8f9bff;
+  --dt-preview-math: currentColor;
+
+  /* pdf (pages are images: only their surroundings follow the profile) */
+  --dt-pdf-bg: #3a3a3c;
+  --dt-pdf-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  --dt-pdf-filter: none;
+}
+
+/* Migrated from settings.jsonc (colors / editor fonts) when DevTex 1.0.5 first ran. */
+:root {
+  --dt-editor-font: SF Mono, Menlo, monospace;
+  --dt-editor-size: 14px;
+  --dt-editor-line-height: 1.5;
+  --dt-editor-active-line: rgba(120, 120, 180, 0.10);
+  --dt-editor-matching-bracket: rgba(80, 200, 120, 0.35);
+  --dt-editor-broken: rgba(230, 60, 60, 0.35);
+  --dt-editor-selection-match: rgba(255, 210, 0, 0.25);
+  --dt-editor-env-pair: rgba(80, 160, 255, 0.25);
+}

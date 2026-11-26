@@ -99,7 +99,44 @@ pub mod mac {
         Ok(debouncer)
     }
 
-    /// Event carrying the changed `themes/<name>.css` names (style-profile hot reload).
+    /// DevStyle's shared folder changed (no payload: the frontend re-reads it).
+    pub const DEVSTYLE_EVENT: &str = "devtex://devstyle-changed";
+
+    /// Watch DevStyle's shared folder (created if missing) for devstyle.json and profile changes.
+    pub fn watch_devstyle(app: AppHandle, root: &Path) -> AppResult<ProjectWatcher> {
+        std::fs::create_dir_all(root.join(crate::devstyle::PROFILES_DIR))?;
+        let canon = root.canonicalize()?;
+        let root_for_cb = canon.clone();
+        let mut debouncer = new_debouncer(DEBOUNCE, move |res: DebounceEventResult| {
+            match res {
+                Ok(DebouncedEventBatch::Events(events)) => {
+                    if events
+                        .iter()
+                        .any(|e| crate::devstyle::is_relevant_change(&root_for_cb, &e.path))
+                    {
+                        let _ = app.emit(DEVSTYLE_EVENT, ());
+                    }
+                }
+                // events were missed: re-read to be safe
+                Ok(_) => {
+                    let _ = app.emit(DEVSTYLE_EVENT, ());
+                }
+                Err(_) => {}
+            }
+        })
+        .map_err(|e| AppError::Io {
+            message: e.to_string(),
+        })?;
+        debouncer
+            .watcher()
+            .watch(&canon, RecursiveMode::Recursive)
+            .map_err(|e| AppError::Io {
+                message: e.to_string(),
+            })?;
+        Ok(debouncer)
+    }
+
+    /// Event carrying the changed `themes/<name>.css` names (user.css hot reload).
     pub const THEME_EVENT: &str = "devtex://theme-changed";
 
     /// Watch `<config>/themes` (created if missing) for saved style profiles.

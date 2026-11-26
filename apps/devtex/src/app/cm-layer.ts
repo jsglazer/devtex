@@ -1,6 +1,6 @@
 /**
  * Puts CodeMirror's injected styles into `@layer cm`, the lowest cascade
- * layer (styles.css declares `@layer cm, base, profile, user`).
+ * layer (styles.css declares `@layer cm, app-base, ds-profile, app-override, user`).
  *
  * CodeMirror (style-mod) adds its theme rules with `insertRule` on a
  * constructed stylesheet in `document.adoptedStyleSheets`. Unlayered rules

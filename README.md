@@ -62,14 +62,14 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
 **Shortcuts and configuration**
 - The macOS menu is defined explicitly in Rust, so system shortcuts (⌘Q/W/C/V/X/Z/⇧Z/A/H/M, ⌘Tab, ⌘Space, …) are never taken by app commands.
 - Config files (JSONC) live in `~/Library/Application Support/DevTex/` on macOS and in the app container on iOS:
-  - `settings.jsonc`: word wrap, hidden preamble, preview debounce, timing HUD, latexmk path, bad-box reporting, interface zoom and the style profiles (`ui.theme`, `ui.themeDark`).
+  - `settings.jsonc`: word wrap, hidden preamble, preview debounce, timing HUD, latexmk path, bad-box reporting, interface zoom and the style choice (`ui.followSharedStyle`, `ui.theme`, `ui.themeDark`).
   - `keymap.json`: `[{ "key": "Mod-Shift-b", "command": "palette.environments" }]`. Reserved keys are rejected and reported. Map a key to `""` to unbind it.
   - `toolbars.json`: show/hide toolbars holding any command. Use `"|"` (or `"-"`, or `{ "separator": true }`) as an item for a divider.
   - `recent.json`: the recent projects list, written by the app.
   - `syntax/*.json`: custom highlighting rules for LaTeX or embedded code. A rule may leave out `color` and `fontStyle`; it then only gets the class `.cm-dt-syn-<name>-<token>`, which a style profile can style.
-  - `themes/*.css`: style profiles and `user.css` (see **Style profiles** below).
+  - `themes/user.css`: your CSS on top of any style profile, in DevTex only (see **Style profiles** below).
 - Invalid config never crashes the app: defaults are used and the problems appear in the Problems panel.
-- The Settings dialog picks the light and dark style profiles and has quick controls for the editor font, font size and highlight colours. It shows the config folder's path (selectable) with an **Open Config Folder** button (macOS).
+- The Settings dialog has the **Follow shared style** switch and picks the light and dark style profiles. It has quick controls for the editor font, font size and highlight colours. It shows the config folder's path (selectable) with an **Open Config Folder** button (macOS).
 - Optional debug HUD (`preview.timingHud`) shows parse/render/typeset ms per edit.
 
 **iOS / iPadOS**
@@ -82,91 +82,97 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
 
 ## Style profiles
 
-All of DevTex's colours and fonts (the window, editor, syntax colours, Live preview and the area around the PDF) come from a **style profile**: a plain `.css` file in the `themes/` folder of the config folder, next to `syntax/`.
+DevTex's colours and fonts come from [DevStyle](https://github.com/jsglazer/devstyle), the shared style system for my apps. This covers the window, editor, syntax colours, Live preview and the area around the PDF. A DevStyle **profile** is a plain `.css` file that sets `--ds-*` tokens. Profiles come in light/dark pairs, and every DevStyle app reads them from one shared folder, so a style picked in any app applies to all of them.
 
-- Profiles come in light/dark pairs that follow the system appearance: `ui.theme` names the light profile and `ui.themeDark` the dark one. DevTex switches between them live when macOS changes appearance.
-- Built in: **Default**, **Paper**, **High Contrast** and **Solarized**, each as a Light and a Dark file (`Default Light.css`, `Default Dark.css`, …). The first time one is used it is copied into `themes/` so you can edit it. DevTex never overwrites a file that is already in `themes/`; delete it to get the built-in version back.
-- Choose with Settings (Light profile / Dark profile), View ▸ Style Profile (sets both of a pair), or the **Select Style Profile…** command. All three switch live, without reloading or resetting the editor.
-- Saving a profile or `user.css` reloads it automatically on macOS. File ▸ Reload Config Files reloads them on every platform, including iOS.
-- `themes/user.css` (optional) overrides every profile. The Settings dialog's font, size and highlight-colour controls write their values into a block that DevTex manages inside `user.css`, so the profile files are never rewritten by the app. Anything outside that block is yours.
-- Stacking order uses cascade layers, `@layer cm, base, profile, user`: CodeMirror's own theme is lowest, then DevTex's layout-only base stylesheet, then the profile, then `user.css`. A profile rule always wins over the built-in look, whatever its specificity.
-- A header comment `/* devtex: appearance=light */` or `/* devtex: appearance=dark */` sets the native window appearance (title bar, scroll bars, form controls) to match the profile, for example a dark profile used in light mode.
-- If a profile is missing or can't be read, DevTex uses Default and reports it in Problems.
-- PDF pages are drawn as images and can't follow a profile: only their surroundings do (`--dt-pdf-bg`, `--dt-pdf-shadow`). `--dt-pdf-filter` (empty by default) lets a dark profile dim the pages, e.g. `brightness(0.85)`.
-- Upgrading from 1.0.4 or earlier: the old `colors` and `editor.fontFamily`/`fontSize`/`lineHeight` values in `settings.jsonc` are written into `themes/Default Light.css` and `Default Dark.css` the first time 1.0.5 runs, then removed from `settings.jsonc`. Problems lists them as moved.
+- **Shared folder (macOS):** `~/Library/Group Containers/PWGXN26URQ.com.jsglazer.devstyle/DevStyle/`. It holds `devstyle.json`, which names the light and dark profile every app follows, and `profiles/<id>.css`. On first launch DevTex copies DevStyle's built-in profiles there: Default, Paper, High Contrast and Solarized, each Light and Dark. It never overwrites a file that is already there, so you can edit them. The folder's path is shown in Settings.
+- **Follow shared style / Use my own:** with `ui.followSharedStyle` on (the default), DevTex shows the pair named in `devstyle.json`. Picking a profile in Settings, View ▸ Style Profile or **Select Style Profile…** then changes the style for every app that follows it, and the dialog says so. Turn the switch off to give DevTex its own pair (`ui.theme` / `ui.themeDark`, DevStyle profile ids such as `paper-light`) without touching other apps.
+- **Light and dark:** DevTex switches between the two profiles live when macOS changes appearance. Changes to `devstyle.json` or to the active profile, made by another app or by hand, apply within a moment. File ▸ Reload Config Files reloads them as well.
+- **Window appearance:** the profile's header (`appearance=light|dark`) sets the native window appearance (title bar, scroll bars, form controls), for example when a dark profile is used in light mode.
+- **Problems:** a missing or broken profile, or a bad `devstyle.json`, falls back to Default and is reported in Problems.
+- **iOS:** there is no shared folder, so DevTex uses DevStyle's built-in profiles with its own `ui.theme` / `ui.themeDark`, and the follow switch is hidden.
+- **`themes/user.css`** (in DevTex's config folder, optional) overrides any profile, in DevTex only. Set any `--dt-*` variable there, or add your own rules. The Settings dialog's font, size and highlight-colour controls write their values into a block that DevTex manages inside `user.css`, so profiles are never rewritten by the app. Anything outside that block is yours. Saving `user.css` reloads it automatically on macOS.
+- **Stacking order:** cascade layers, `@layer cm, app-base, ds-profile, app-override, user`. CodeMirror's own theme is lowest. DevTex's layout-only stylesheet and its `--dt-*` → `--ds-*` aliases come next, then the DevStyle profile, then `user.css`. A profile rule always wins over the built-in look, whatever its specificity.
+- **PDF pages** are drawn as images and can't follow a profile: only their surroundings do (`--ds-page-bg`, `--ds-page-shadow`). `--ds-page-filter` (`none` by default) lets a dark profile dim the pages, e.g. `brightness(0.85)`.
+- **Upgrading from 1.0.5 or 1.0.6:** DevTex's own `themes/*.css` profiles move to DevStyle the first time 1.0.7 runs.
+  - Untouched copies of the shipped profiles are deleted, and DevStyle's built-in with the same name takes over. `Default Light` becomes `default-light`, and so on.
+  - A profile you edited or made yourself becomes a DevStyle profile in the shared folder, named `<name>-devtex` (e.g. `paper-dark-devtex`, shown as "Paper Dark (DevTex)"). Its `--dt-*` values are renamed to their `--ds-*` tokens, and anything it doesn't set is filled in from the matching built-in. DevTex keeps showing it ("Use my own"), and other apps are left unchanged. The old file is then removed from `themes/`.
+  - Problems lists what moved.
+- **Upgrading from 1.0.4 or earlier:** the old `colors` and `editor.fontFamily`/`fontSize`/`lineHeight` keys are removed from `settings.jsonc`. Values you had changed from their defaults go into `themes/user.css`.
 
-**Minimal example profile** (`themes/Ocean Dark.css`, then pick it as the dark profile):
+**Making a profile:** add `profiles/<id>.css` to the shared folder. It needs the DevStyle header and sets any `--ds-*` tokens; the [devstyle README](https://github.com/jsglazer/devstyle) lists every token. Then pick it in Settings. Tokens it leaves out keep the built-in Default's value, and DevTex lists them in Problems as missing.
 
 ```css
-/* devtex: appearance=dark */
+/* devstyle: name="Ocean Dark" appearance=dark pair=default-light */
 :root {
-  --dt-bg: #0f1d2b;
-  --dt-panel: #142536;
-  --dt-fg: #d8e6f3;
-  --dt-accent: #4fb3ff;
-  --dt-editor-bg: #0c1824;
-  --dt-editor-active-line: rgba(79, 179, 255, 0.1);
-  --dt-syntax-command: #7fd1ff;
-  --dt-preview-font: 'Iowan Old Style', Georgia, serif;
+  color-scheme: dark;
+  --ds-bg: #0f1d2b;
+  --ds-panel: #142536;
+  --ds-fg: #d8e6f3;
+  --ds-accent: #4fb3ff;
+  --ds-editor-bg: #0c1824;
+  --ds-active-line: rgba(79, 179, 255, 0.1);
+  --ds-syn-keyword: #7fd1ff;
+  --ds-prose-font: 'Iowan Old Style', Georgia, serif;
 }
-/* any other CSS works too */
+/* other CSS works in DevTex's web views (other apps may ignore it) */
 .cm-line { letter-spacing: 0.2px; }
 ```
 
-A profile only needs the variables it changes: the built-in Default Light (or Default Dark, for the dark slot) always sits underneath it, so every other variable keeps its Default value.
+**Variable reference.** These `--dt-*` names are the stable contract inside DevTex and keep working across versions; other selectors may change. Each one takes its value from the DevStyle token shown. Set the `--ds-*` token in a profile to change every app, or the `--dt-*` variable in `user.css` to change DevTex only. Where two variables share a token (e.g. `--dt-preview-bg` and `--dt-bg`), set the `--dt-*` one in `user.css` to tell them apart.
 
-**Variable reference** (the stable contract: these names keep working across versions; other selectors may change):
-
-| Variable | Group | What it styles |
-|---|---|---|
-| `--dt-bg` | App | Window and editor-tab background |
-| `--dt-fg` | App | Main text colour |
-| `--dt-muted` | App | Secondary text (status bar, labels, gutter numbers) |
-| `--dt-border` | App | Dividers and control borders |
-| `--dt-panel` | App | Toolbars, tab bars, Outline, Problems and status bar |
-| `--dt-accent` | App | Accent colour (primary buttons, links, Beamer titles) |
-| `--dt-accent-fg` | App | Text drawn on the accent colour |
-| `--dt-error` | App | Errors, broken math, deleted diff lines, Beamer alerts |
-| `--dt-warning` | App | Warnings |
-| `--dt-success` | App | Added diff lines, Beamer example blocks |
-| `--dt-sync` | App | Sync highlight (Preview block, PDF box, editor flash) |
-| `--dt-shadow` | App | Shadow colour for dialogs, slides and PDF pages |
-| `--dt-font` | App | Interface font family |
-| `--dt-font-size` | App | Interface font size |
-| `--dt-mono-font` | App | Monospace font for file locations and code |
-| `--dt-editor-font` | Editor | Editor font family |
-| `--dt-editor-size` | Editor | Editor font size |
-| `--dt-editor-line-height` | Editor | Editor line height |
-| `--dt-editor-bg` | Editor | Editor background |
-| `--dt-editor-fg` | Editor | Editor text |
-| `--dt-editor-gutter` | Editor | Line-number gutter background |
-| `--dt-editor-cursor` | Editor | Cursor colour |
-| `--dt-editor-selection` | Editor | Selection background |
-| `--dt-editor-active-line` | Editor | Current-line highlight |
-| `--dt-editor-matching-bracket` | Editor | Matching-bracket highlight |
-| `--dt-editor-selection-match` | Editor | Other occurrences of the selection |
-| `--dt-editor-broken` | Editor | Unbalanced \begin/\end and braces |
-| `--dt-editor-env-pair` | Editor | The \begin/\end pair around the cursor |
-| `--dt-syntax-command` | Syntax | LaTeX commands |
-| `--dt-syntax-env` | Syntax | Environment names |
-| `--dt-syntax-atom` | Syntax | Atoms (e.g. & and special characters) |
-| `--dt-syntax-comment` | Syntax | Comments |
-| `--dt-syntax-math` | Syntax | Math |
-| `--dt-syntax-number` | Syntax | Numbers and lengths |
-| `--dt-syntax-bracket` | Syntax | Brackets and braces |
-| `--dt-syntax-meta` | Syntax | Meta tokens |
-| `--dt-syntax-error` | Syntax | Invalid tokens |
-| `--dt-preview-font` | Preview | Preview body font family |
-| `--dt-preview-size` | Preview | Preview body font size |
-| `--dt-preview-line-height` | Preview | Preview line height |
-| `--dt-preview-heading-font` | Preview | Preview heading font family |
-| `--dt-preview-fg` | Preview | Preview text |
-| `--dt-preview-bg` | Preview | Preview background |
-| `--dt-preview-link` | Preview | Links, citations and references in the Preview |
-| `--dt-preview-math` | Preview | Typeset math colour |
-| `--dt-pdf-bg` | PDF | Area around the PDF pages |
-| `--dt-pdf-shadow` | PDF | Page shadow (a box-shadow value) |
-| `--dt-pdf-filter` | PDF | CSS filter for the pages, empty by default (e.g. a dark profile can dim them) |
+| Variable | Group | DevStyle token | Used for |
+|---|---|---|---|
+| `--dt-bg` | App | `--ds-bg` | Window and editor-tab background |
+| `--dt-fg` | App | `--ds-fg` | Main text colour |
+| `--dt-muted` | App | `--ds-muted` | Secondary text (status bar, labels) |
+| `--dt-border` | App | `--ds-border` | Dividers and control borders |
+| `--dt-panel` | App | `--ds-panel` | Toolbars, tab bars, Outline, Problems and status bar |
+| `--dt-accent` | App | `--ds-accent` | Accent colour (primary buttons, links, Beamer titles) |
+| `--dt-accent-fg` | App | `--ds-fg-on-accent` | Text drawn on the accent colour |
+| `--dt-error` | App | `--ds-error` | Errors, broken math, deleted diff lines, Beamer alerts |
+| `--dt-warning` | App | `--ds-warning` | Warnings |
+| `--dt-success` | App | `--ds-success` | Added diff lines, Beamer example blocks |
+| `--dt-sync` | App | `--ds-sync` | Sync highlight (Preview block, PDF box, editor flash) |
+| `--dt-shadow` | App | `--ds-overlay` | Shadow and backdrop colour for dialogs and slides |
+| `--dt-dialog-shadow` | App | `--ds-shadow` | Dialog shadow (a box-shadow value) |
+| `--dt-font` | App | `--ds-ui-font` | Interface font family |
+| `--dt-font-size` | App | `--ds-ui-size` | Interface font size |
+| `--dt-mono-font` | App | `--ds-mono-font` | Monospace font for file locations and code |
+| `--dt-editor-font` | Editor | `--ds-mono-font` | Editor font family |
+| `--dt-editor-size` | Editor | `--ds-mono-size` | Editor font size |
+| `--dt-editor-line-height` | Editor | `--ds-mono-line-height` | Editor line height |
+| `--dt-editor-bg` | Editor | `--ds-editor-bg` | Editor background |
+| `--dt-editor-fg` | Editor | `--ds-editor-fg` | Editor text |
+| `--dt-editor-gutter` | Editor | `--ds-gutter-bg` | Line-number gutter background |
+| `--dt-editor-gutter-fg` | Editor | `--ds-gutter-fg` | Line numbers |
+| `--dt-editor-cursor` | Editor | `--ds-cursor` | Cursor colour |
+| `--dt-editor-selection` | Editor | `--ds-selection` | Selection background |
+| `--dt-editor-active-line` | Editor | `--ds-active-line` | Current-line highlight |
+| `--dt-editor-matching-bracket` | Editor | `--ds-matching-bracket` | Matching-bracket highlight |
+| `--dt-editor-selection-match` | Editor | `--ds-selection-match` | Other occurrences of the selection |
+| `--dt-editor-search-match` | Editor | `--ds-search-match` | Search matches |
+| `--dt-editor-broken` | Editor | `--ds-broken` | Unbalanced \begin/\end and braces |
+| `--dt-editor-env-pair` | Editor | `--ds-pair-highlight` | The \begin/\end pair around the cursor |
+| `--dt-syntax-command` | Syntax | `--ds-syn-keyword` | LaTeX commands |
+| `--dt-syntax-env` | Syntax | `--ds-syn-env` | Environment names |
+| `--dt-syntax-atom` | Syntax | `--ds-syn-atom` | Atoms (e.g. & and special characters) |
+| `--dt-syntax-comment` | Syntax | `--ds-syn-comment` | Comments |
+| `--dt-syntax-math` | Syntax | `--ds-syn-math` | Math |
+| `--dt-syntax-number` | Syntax | `--ds-syn-number` | Numbers and lengths |
+| `--dt-syntax-bracket` | Syntax | `--ds-syn-bracket` | Brackets and braces |
+| `--dt-syntax-meta` | Syntax | `--ds-syn-meta` | Meta tokens |
+| `--dt-syntax-error` | Syntax | `--ds-syn-error` | Invalid tokens |
+| `--dt-preview-font` | Preview | `--ds-prose-font` | Preview body font family |
+| `--dt-preview-size` | Preview | `--ds-prose-size` | Preview body font size |
+| `--dt-preview-line-height` | Preview | `--ds-prose-line-height` | Preview line height |
+| `--dt-preview-heading-font` | Preview | `--ds-heading-font` | Preview heading font family |
+| `--dt-preview-fg` | Preview | `--ds-fg` | Preview text |
+| `--dt-preview-bg` | Preview | `--ds-bg` | Preview background |
+| `--dt-preview-link` | Preview | `--ds-link` | Links, citations and references in the Preview |
+| `--dt-preview-math` | Preview | none (DevTex only, default `currentColor`) | Typeset math colour |
+| `--dt-pdf-bg` | PDF | `--ds-page-bg` | Area around the PDF pages |
+| `--dt-pdf-shadow` | PDF | `--ds-page-shadow` | Page shadow (a box-shadow value) |
+| `--dt-pdf-filter` | PDF | `--ds-page-filter` | CSS filter for the pages (a dark profile can dim them) |
 
 ## Repository layout
 

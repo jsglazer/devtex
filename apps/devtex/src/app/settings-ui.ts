@@ -1,10 +1,12 @@
 /**
- * Settings dialog: the light/dark style profiles, plus quick editor font,
+ * Settings dialog: "Follow shared style / Use my own", the light/dark
+ * DevStyle profiles, plus quick editor font,
  * size and highlight-colour controls. The quick controls never rewrite a
  * profile: changed values are saved as variable overrides in the
  * DevTex-managed block of themes/user.css. Everything else is edited in the
  * JSONC/CSS files in the config folder (path and Open button at the bottom).
  */
+import type { ProfileInfo } from '@devstyle/web';
 import { formatCssColor, parseCssColor, toHex6, withPickedRgb, type Rgba } from '@devtex/core';
 import { el } from './ui.js';
 
@@ -31,10 +33,19 @@ export const COLOR_VARIABLES: Readonly<Record<string, string>> = {
 };
 
 export interface SettingsDialogInput {
+  /** `ui.followSharedStyle`. */
+  follow: boolean;
+  /** False where there is no shared DevStyle folder (iOS): the follow switch is hidden. */
+  canShare: boolean;
+  /** The shared choice (devstyle.json) every following app uses. */
+  shared: { light: string; dark: string };
+  /** DevTex's own choice (`ui.theme` / `ui.themeDark`). */
   theme: string;
   themeDark: string;
-  /** Every selectable profile name. */
-  profiles: string[];
+  /** Every selectable DevStyle profile. */
+  profiles: readonly ProfileInfo[];
+  /** Where the shared folder is (shown in the dialog), or null. */
+  sharedLocation: string | null;
   /** Current overrides in user.css (managed block). */
   overrides: ReadonlyMap<string, string>;
   /** Value a variable has right now (profile + overrides). */
@@ -45,6 +56,8 @@ export interface SettingsDialogInput {
 }
 
 export interface SettingsDialogResult {
+  follow: boolean;
+  /** The light/dark ids picked: the shared choice when `follow`, else DevTex's own. */
   theme: string;
   themeDark: string;
   overrides: Map<string, string>;
@@ -69,17 +82,78 @@ export function nextOverrides(
   return out;
 }
 
-function profileSelect(names: readonly string[], value: string, label: string): HTMLSelectElement {
-  const all = names.includes(value) ? names : [...names, value];
-  const s = el('select', { 'aria-label': label }, ...all.map((n) => el('option', { value: n }, n)));
-  s.value = value;
-  return s;
+/**
+ * Options for one slot: profiles of that appearance first, then the others
+ * (allowed, e.g. a dark profile in light mode), plus the current value if it
+ * is not in the list. Pure, so it is unit-tested.
+ */
+export function profileOptions(
+  profiles: readonly ProfileInfo[],
+  slot: 'light' | 'dark',
+  value: string,
+): { value: string; label: string }[] {
+  const mine = profiles.filter((p) => p.appearance === slot);
+  const others = profiles.filter((p) => p.appearance !== slot);
+  const out = [...mine, ...others].map((p) => ({
+    value: p.id,
+    label: p.appearance === slot ? p.name : `${p.name} (${p.appearance})`,
+  }));
+  if (!out.some((o) => o.value === value)) out.push({ value, label: `${value} (missing)` });
+  return out;
+}
+
+function profileSelect(
+  profiles: readonly ProfileInfo[],
+  slot: 'light' | 'dark',
+  value: string,
+  label: string,
+): HTMLSelectElement & { fill(value: string): void } {
+  const s = el('select', { 'aria-label': label });
+  const fill = (v: string): void => {
+    s.replaceChildren(
+      ...profileOptions(profiles, slot, v).map((o) => el('option', { value: o.value }, o.label)),
+    );
+    s.value = v;
+  };
+  fill(value);
+  return Object.assign(s, { fill });
 }
 
 export function settingsDialog(input: SettingsDialogInput): Promise<SettingsDialogResult | null> {
   return new Promise((resolve) => {
-    const light = profileSelect(input.profiles, input.theme, 'Light profile');
-    const dark = profileSelect(input.profiles, input.themeDark, 'Dark profile');
+    const shareable = input.canShare;
+    let follow = shareable && input.follow;
+    const initial = (f: boolean): { light: string; dark: string } =>
+      f ? input.shared : { light: input.theme, dark: input.themeDark };
+    const light = profileSelect(input.profiles, 'light', initial(follow).light, 'Light profile');
+    const dark = profileSelect(input.profiles, 'dark', initial(follow).dark, 'Dark profile');
+    const followBox = el('input', { type: 'checkbox' });
+    followBox.checked = follow;
+    const followHint = el('div', { class: 'dt-muted' });
+    const showHint = (): void => {
+      followHint.textContent = follow
+        ? 'Following the shared style: changing these profiles changes every app that follows it.'
+        : 'Using DevTex’s own profiles: other apps are not affected.';
+    };
+    showHint();
+    followBox.addEventListener('change', () => {
+      follow = followBox.checked;
+      const v = initial(follow);
+      light.fill(v.light);
+      dark.fill(v.dark);
+      showHint();
+    });
+    const followRow = shareable
+      ? [
+          el(
+            'label',
+            { class: 'dt-field row' },
+            followBox,
+            el('span', {}, 'Follow shared style (all DevStyle apps)'),
+          ),
+          followHint,
+        ]
+      : [];
     const fields: { variable: string; initial: string; input: HTMLInputElement }[] = [];
     const fontInitial = input.current('--dt-editor-font');
     const font = el('input', { type: 'text', value: fontInitial });
@@ -178,7 +252,12 @@ export function settingsDialog(input: SettingsDialogInput): Promise<SettingsDial
       'div',
       { class: 'dt-modal' },
       el('h3', {}, 'Settings'),
-      el('div', { class: 'dt-muted' }, 'Style profile (follows the system light/dark setting)'),
+      el(
+        'div',
+        { class: 'dt-muted' },
+        'Style profile (DevStyle; follows the system light/dark setting)',
+      ),
+      ...followRow,
       el(
         'label',
         { class: 'dt-field row' },
@@ -203,9 +282,23 @@ export function settingsDialog(input: SettingsDialogInput): Promise<SettingsDial
       el(
         'div',
         { class: 'dt-muted' },
-        'Config folder: settings.jsonc, keymap.json, toolbars.json, syntax/*.json and themes/*.css',
+        'Config folder: settings.jsonc, keymap.json, toolbars.json, syntax/*.json and themes/user.css',
       ),
       el('div', { class: 'dt-field row' }, path, ...(openBtn === null ? [] : [openBtn])),
+      ...(input.sharedLocation === null
+        ? []
+        : [
+            el('div', { class: 'dt-muted' }, 'DevStyle profiles (shared by all apps):'),
+            el(
+              'div',
+              { class: 'dt-field row' },
+              el(
+                'span',
+                { class: 'dt-config-path', title: 'DevStyle folder (selectable)' },
+                input.sharedLocation,
+              ),
+            ),
+          ]),
       el('div', { class: 'dt-modal-buttons' }, cancel, save),
     );
     overlay.append(box);
@@ -232,6 +325,7 @@ export function settingsDialog(input: SettingsDialogInput): Promise<SettingsDial
         },
       ];
       done({
+        follow,
         theme: light.value,
         themeDark: dark.value,
         overrides: clearAll

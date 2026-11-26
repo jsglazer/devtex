@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-devstyle-list"
+description = "Enables the devstyle_list command without any pre-configured scope."
+commands.allow = ["devstyle_list"]
+
+[[permission]]
+identifier = "deny-devstyle-list"
+description = "Denies the devstyle_list command without any pre-configured scope."
+commands.deny = ["devstyle_list"]

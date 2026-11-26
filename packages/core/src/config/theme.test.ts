@@ -1,66 +1,74 @@
 import { describe, expect, it } from 'vitest';
+import { hashString } from '../hash.js';
 import {
   activeSlot,
-  appendMigrated,
-  familyOf,
+  aliasStylesheet,
+  changedLegacyVars,
+  convertLegacyProfile,
   forcedAppearance,
+  isLegacyProfileName,
+  isProfileId,
+  isProfileSetting,
   isSafeCssValue,
-  isValidProfileName,
-  profileAppearance,
-  profileFile,
+  isUntouchedLegacyProfile,
+  LEGACY_BUILTIN_HASHES,
+  legacyAppearance,
+  legacyNameToId,
+  legacyProfileName,
+  migrateProfileSetting,
+  planLegacyMigration,
   profileForSlot,
-  profileNameOf,
-  profileNames,
   readManagedBlock,
+  sameCssValue,
+  splitMigratedBlock,
   STYLE_VARIABLES,
   wrapInLayer,
   writeManagedBlock,
 } from './theme.js';
 
-describe('style profile names and files', () => {
-  it('maps names to themes/<name>.css and back', () => {
-    expect(profileFile('Paper Light')).toBe('themes/Paper Light.css');
-    expect(profileNameOf('themes/Paper Light.css')).toBe('Paper Light');
-    expect(profileNameOf('themes/user.css')).toBeNull();
-    expect(profileNameOf('syntax/x.json')).toBeNull();
-    expect(profileNameOf('themes/../x.css')).toBeNull();
+describe('profile ids and settings', () => {
+  it('accepts DevStyle ids only as ids', () => {
+    expect(isProfileId('high-contrast-dark')).toBe(true);
+    for (const bad of ['', 'Paper Light', '../x', 'a/b', 'x;y', 'a'.repeat(65)])
+      expect(isProfileId(bad), bad).toBe(false);
   });
-  it('rejects unsafe names', () => {
-    for (const bad of ['', '../x', 'a/b', '.hidden', 'user', 'x;y', 'a..b'])
-      expect(isValidProfileName(bad), bad).toBe(false);
-    expect(isValidProfileName('High Contrast Dark')).toBe(true);
-  });
-  it('lists profiles from a theme listing, sorted, without user.css', () => {
-    expect(
-      profileNames(['themes/user.css', 'themes/Paper Light.css', 'themes/Default Dark.css']),
-    ).toEqual(['Default Dark', 'Paper Light']);
-  });
-  it('families pair Light and Dark', () => {
-    expect(familyOf('High Contrast Dark')).toBe('High Contrast');
-    expect(familyOf('Mine')).toBe('Mine');
+  it('still accepts 1.0.6 names in settings until they are migrated', () => {
+    expect(isProfileSetting('Paper Light')).toBe(true);
+    expect(isProfileSetting('paper-light')).toBe(true);
+    for (const bad of ['../x', '.hidden', 'a..b']) expect(isProfileSetting(bad), bad).toBe(false);
+    expect(isLegacyProfileName('user')).toBe(false);
+    expect(isLegacyProfileName('High Contrast Dark')).toBe(true);
   });
 });
 
 describe('light/dark selection', () => {
-  const ui = { theme: 'Paper Light', themeDark: 'Solarized Dark' };
+  const ui = { theme: 'paper-light', themeDark: 'solarized-dark' };
   it('follows the system appearance', () => {
-    expect(profileForSlot(ui, activeSlot(false))).toBe('Paper Light');
-    expect(profileForSlot(ui, activeSlot(true))).toBe('Solarized Dark');
+    expect(profileForSlot(ui, activeSlot(false))).toBe('paper-light');
+    expect(profileForSlot(ui, activeSlot(true))).toBe('solarized-dark');
   });
-  it('falls back to Default for an invalid name', () => {
-    expect(profileForSlot({ theme: '../x', themeDark: '' }, 'light')).toBe('Default Light');
-    expect(profileForSlot({ theme: '../x', themeDark: '' }, 'dark')).toBe('Default Dark');
-  });
-  it('reads the appearance header', () => {
-    expect(profileAppearance('/* devtex: appearance=dark */\n:root{}')).toBe('dark');
-    expect(profileAppearance('/*devtex:appearance = Light*/')).toBe('light');
-    expect(profileAppearance(':root{}')).toBeNull();
+  it('falls back to Default for an invalid or not-yet-migrated value', () => {
+    expect(profileForSlot({ theme: '../x', themeDark: 'Paper Dark' }, 'light')).toBe(
+      'default-light',
+    );
+    expect(profileForSlot({ theme: '../x', themeDark: 'Paper Dark' }, 'dark')).toBe('default-dark');
   });
   it('forces the native appearance only when the profile disagrees with the system', () => {
-    const dark = '/* devtex: appearance=dark */';
-    expect(forcedAppearance(dark, true)).toBeNull();
-    expect(forcedAppearance(dark, false)).toBe('dark');
-    expect(forcedAppearance(':root{}', false)).toBeNull();
+    expect(forcedAppearance('dark', true)).toBeNull();
+    expect(forcedAppearance('dark', false)).toBe('dark');
+    expect(forcedAppearance(null, false)).toBeNull();
+  });
+});
+
+describe('aliases', () => {
+  it('maps each --dt-* to its --ds-* token, and DevTex-only ones to their own value', () => {
+    const css = aliasStylesheet();
+    expect(css).toContain('--dt-bg: var(--ds-bg);');
+    expect(css).toContain('--dt-editor-env-pair: var(--ds-pair-highlight);');
+    expect(css).toContain('--dt-syntax-command: var(--ds-syn-keyword);');
+    expect(css).toContain('--dt-pdf-filter: var(--ds-page-filter);');
+    expect(css).toContain('--dt-preview-math: currentColor;');
+    expect(css.startsWith(':root {')).toBe(true);
   });
 });
 
@@ -107,13 +115,115 @@ describe('CSS helpers', () => {
     expect(readManagedBlock(t).size).toBe(0);
     expect(t).not.toContain('color:red');
   });
-  it('migrated values are appended after the profile so they win', () => {
-    const out = appendMigrated(
-      ':root { --dt-editor-size: 14px; }',
-      new Map([['--dt-editor-size', '16px']]),
+  it('compares CSS values loosely', () => {
+    expect(sameCssValue('rgba(120, 120, 180, 0.10)', 'rgba(120,120,180,0.1)')).toBe(true);
+    expect(sameCssValue("'SF Mono', Menlo, monospace", 'SF Mono, Menlo, monospace')).toBe(true);
+    expect(sameCssValue('14px', '15px')).toBe(false);
+  });
+});
+
+describe('migration from settings.jsonc (1.0.4)', () => {
+  it('keeps only the values the user changed from the old defaults', () => {
+    const vars = new Map([
+      ['--dt-editor-size', '14px'],
+      ['--dt-editor-active-line', 'rgba(120,120,180,0.1)'],
+      ['--dt-editor-font', 'Fira Code'],
+    ]);
+    expect(changedLegacyVars(vars)).toEqual(new Map([['--dt-editor-font', 'Fira Code']]));
+  });
+});
+
+describe('migration from DevTex 1.0.5–1.0.6 profiles', () => {
+  const shipped = ':root {\n  --dt-bg: #fff;\n  --dt-editor-active-line: rgba(1, 2, 3, 0.1);\n}\n';
+  const name = 'Default Light';
+  const withHash = (css: string): void => {
+    (LEGACY_BUILTIN_HASHES as Record<string, string>)[name] = hashString(css);
+  };
+  it('reads old file names, appearance headers and ids', () => {
+    expect(legacyProfileName('themes/Paper Light.css')).toBe('Paper Light');
+    expect(legacyProfileName('themes/user.css')).toBeNull();
+    expect(legacyProfileName('syntax/x.json')).toBeNull();
+    expect(legacyNameToId('High Contrast Dark')).toBe('high-contrast-dark');
+    expect(legacyNameToId('My  Theme!')).toBe('my-theme');
+    expect(legacyNameToId('!!!')).toBe('profile');
+    expect(legacyAppearance('/*devtex:appearance = Dark*/')).toBe('dark');
+    expect(legacyAppearance(':root{}')).toBeNull();
+  });
+  it('splits off the block 1.0.5 appended', () => {
+    const block =
+      '\n/* Migrated from settings.jsonc (colors / editor fonts) when DevTex 1.0.5 first ran. */\n:root {\n  --dt-editor-size: 14px;\n}\n';
+    const r = splitMigratedBlock(shipped + block);
+    expect(r.base).toBe(shipped);
+    expect(r.vars).toEqual(new Map([['--dt-editor-size', '14px']]));
+    expect(splitMigratedBlock(shipped).vars.size).toBe(0);
+  });
+  it('treats a shipped copy as untouched, even with a migrated block at old defaults', () => {
+    const original = { ...LEGACY_BUILTIN_HASHES };
+    try {
+      withHash(shipped);
+      expect(isUntouchedLegacyProfile(name, shipped)).toBe(true);
+      const atDefaults = `${shipped}\n/* Migrated from settings.jsonc (colors / editor fonts) when DevTex 1.0.5 first ran. */\n:root {\n  --dt-editor-active-line: rgba(120, 120, 180, 0.10);\n  --dt-bg: #FFF;\n}\n`;
+      expect(isUntouchedLegacyProfile(name, atDefaults)).toBe(true);
+      const changed = atDefaults.replace('#FFF', '#000');
+      expect(isUntouchedLegacyProfile(name, changed)).toBe(false);
+      expect(isUntouchedLegacyProfile(name, `${shipped}.x{}`)).toBe(false);
+      expect(isUntouchedLegacyProfile('Mine', shipped)).toBe(false);
+    } finally {
+      Object.assign(LEGACY_BUILTIN_HASHES, original);
+    }
+  });
+  it('converts a profile: DevStyle header, --ds-* names, the rest kept, gaps filled', () => {
+    const out = convertLegacyProfile(
+      '/* devtex: appearance=dark */\n:root { --dt-bg: #111; --dt-preview-bg: #222; --dt-editor-font: Menlo; --dt-mono-font: Monaco; --dt-preview-math: teal; }\n.x { color: red; }',
+      { name: 'Mine "Dark"', appearance: 'dark', pair: 'mine-light' },
+      { bg: '#000', accent: '#abc', 'bad-one': 'x;y' },
     );
-    expect(out.indexOf('16px')).toBeGreaterThan(out.indexOf('14px'));
-    expect(appendMigrated('x', new Map())).toBe('x');
+    expect(out.split('\n')[0]).toBe(
+      '/* devstyle: name="Mine Dark" appearance=dark pair=mine-light */',
+    );
+    expect(out).not.toContain('devtex: appearance');
+    expect(out).toContain('--ds-bg: #111;');
+    expect(out).toContain('--dt-preview-bg: #222;');
+    expect(out).toContain('--ds-mono-font: Menlo;');
+    expect(out).toContain('--dt-mono-font: Monaco;');
+    expect(out).toContain('--dt-preview-math: teal;');
+    expect(out).toContain('.x { color: red; }');
+    expect(out).toContain('--ds-accent: #abc;');
+    expect(out).not.toContain('--ds-bg: #000');
+    expect(out).not.toContain('bad-one');
+    expect(out).toContain('color-scheme: dark;');
+  });
+  it('plans: untouched copies deleted, edited ones converted and paired', () => {
+    const original = { ...LEGACY_BUILTIN_HASHES };
+    try {
+      withHash(shipped);
+      const plan = planLegacyMigration([
+        { file: 'themes/Default Light.css', name, css: shipped },
+        { file: 'themes/Paper Dark.css', name: 'Paper Dark', css: ':root { --dt-bg: #000; }' },
+        { file: 'themes/Mine Light.css', name: 'Mine Light', css: ':root{}' },
+        { file: 'themes/Mine Dark.css', name: 'Mine Dark', css: ':root{}' },
+      ]);
+      expect(plan.deletes).toContain('themes/Default Light.css');
+      expect(plan.ids.get(name)).toBe('default-light');
+      expect(plan.ids.get('Paper Dark')).toBe('paper-dark-devtex');
+      const paper = plan.writes.find((w) => w.id === 'paper-dark-devtex');
+      expect(paper?.css).toContain('appearance=dark pair=paper-light');
+      expect(plan.writes.find((w) => w.id === 'mine-light-devtex')?.css).toContain(
+        'pair=mine-dark-devtex',
+      );
+      expect(plan.writes.find((w) => w.id === 'mine-dark-devtex')?.css).toContain(
+        'appearance=dark pair=mine-light-devtex',
+      );
+    } finally {
+      Object.assign(LEGACY_BUILTIN_HASHES, original);
+    }
+  });
+  it('maps settings through the plan, then by name, then to Default', () => {
+    const ids = new Map([['Mine', 'mine-devtex']]);
+    expect(migrateProfileSetting('paper-light', ids, 'light')).toBe('paper-light');
+    expect(migrateProfileSetting('Mine', ids, 'light')).toBe('mine-devtex');
+    expect(migrateProfileSetting('Solarized Dark', ids, 'dark')).toBe('solarized-dark');
+    expect(migrateProfileSetting('Gone', ids, 'dark')).toBe('default-dark');
   });
 });
 
@@ -157,6 +267,9 @@ describe('documented variables', () => {
       '--dt-preview-bg',
       '--dt-preview-link',
       '--dt-pdf-filter',
+      '--dt-editor-gutter-fg',
+      '--dt-editor-search-match',
+      '--dt-dialog-shadow',
     ])
       expect(names, n).toContain(n);
   });

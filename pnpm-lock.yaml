@@ -220,6 +220,9 @@ importers:
       '@codemirror/view':
         specifier: 6.43.15
         version: 6.43.15
+      '@devstyle/web':
+        specifier: github:jsglazer/devstyle#1.0.2&path:packages/web
+        version: https://codeload.github.com/jsglazer/devstyle/tar.gz/060e7f6042f7fccf41e6a635dc250f6c136bc132#path:packages/web
       '@devtex/cm-latex':
         specifier: workspace:*
         version: link:../../packages/cm-latex
@@ -376,6 +379,10 @@ packages:
 
   '@codemirror/view@6.43.15':
     resolution: {integrity: sha512-HHsfpqFeHyXLs983pSRe38Xajs0vFWZQ2BuX0m7Ki8w3jZ5iD8cuR3lBz2/5/X53Dhf32SBHKh6rtSTB6tKeGw==}
+
+  '@devstyle/web@https://codeload.github.com/jsglazer/devstyle/tar.gz/060e7f6042f7fccf41e6a635dc250f6c136bc132#path:packages/web':
+    resolution: {gitHosted: true, integrity: sha512-e7zTOqiVPLrrZbNRHCKSHm1Xv0qBT34IFNrNBGj4bShaFkgBQ7JEeaPqZnSuKvCI5KqTDLps2oGipx2tQkRFeQ==, path: packages/web, tarball: https://codeload.github.com/jsglazer/devstyle/tar.gz/060e7f6042f7fccf41e6a635dc250f6c136bc132}
+    version: 1.0.2
 
   '@emnapi/core@2.0.0-beta.2':
     resolution: {integrity: sha512-MzCVoWtcg4Pm2B3je5mMvYMvj3MmBKw+fU7vbsJc9/iT8ip6/eYIHo/Dsm/mr+wsHB6SEyJDuxB09Yy6r/8+4A==}
@@ -1759,6 +1766,8 @@ snapshots:
       crelt: 1.0.7
       style-mod: 4.1.5
       w3c-keyname: 2.2.8
+
+  '@devstyle/web@https://codeload.github.com/jsglazer/devstyle/tar.gz/060e7f6042f7fccf41e6a635dc250f6c136bc132#path:packages/web': {}
 
   '@emnapi/core@2.0.0-beta.2':
     dependencies:

@@ -3,7 +3,7 @@
  * back to its default and is reported as an error string for the UI.
  */
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from 'jsonc-parser';
-import { extractLegacyStyle, isValidProfileName, type LegacyStyle } from './theme.js';
+import { extractLegacyStyle, isProfileSetting, type LegacyStyle } from './theme.js';
 
 export interface Settings {
   editor: {
@@ -27,9 +27,14 @@ export interface Settings {
   ui: {
     /** Whole-interface zoom (⌘+ / ⌘− / ⌘0), 0.5–3. */
     zoom: number;
-    /** Style profile (themes/<name>.css) used in light mode. */
+    /**
+     * Follow the style chosen for every app in DevStyle's shared folder
+     * (macOS). When false, `theme` / `themeDark` pick DevTex's own.
+     */
+    followSharedStyle: boolean;
+    /** DevStyle profile id used in light mode when not following the shared style (and on iOS). */
     theme: string;
-    /** Style profile used in dark mode. */
+    /** DevStyle profile id used in dark mode when not following the shared style (and on iOS). */
     themeDark: string;
   };
 }
@@ -42,7 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   preview: { debounceMs: 120, timingHud: false },
   compile: { latexmkPath: '', badBoxes: 'none' },
   citations: { betterBibTex: true },
-  ui: { zoom: 1, theme: 'Default Light', themeDark: 'Default Dark' },
+  ui: { zoom: 1, followSharedStyle: true, theme: 'default-light', themeDark: 'default-dark' },
 };
 
 export interface Loaded<T> {
@@ -51,7 +56,7 @@ export interface Loaded<T> {
 }
 
 export interface LoadedSettings extends Loaded<Settings> {
-  /** Pre-1.0.5 colour/font keys found in the file (to migrate into the Default profiles). */
+  /** Pre-1.0.5 colour/font keys found in the file (to migrate into themes/user.css). */
   legacy: LegacyStyle | null;
 }
 
@@ -118,14 +123,14 @@ export function loadSettings(text: string | null): LoadedSettings {
       'ui.zoom: must be 0.5–3',
     ],
     [
-      !isValidProfileName(s.ui.theme),
+      !isProfileSetting(s.ui.theme),
       () => (s.ui.theme = DEFAULT_SETTINGS.ui.theme),
-      'ui.theme: not a valid style profile name',
+      'ui.theme: not a valid style profile id',
     ],
     [
-      !isValidProfileName(s.ui.themeDark),
+      !isProfileSetting(s.ui.themeDark),
       () => (s.ui.themeDark = DEFAULT_SETTINGS.ui.themeDark),
-      'ui.themeDark: not a valid style profile name',
+      'ui.themeDark: not a valid style profile id',
     ],
     [
       s.preview.debounceMs < 0 || s.preview.debounceMs > 2000,

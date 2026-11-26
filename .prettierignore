@@ -9,3 +9,5 @@ pnpm-lock.yaml
 plugins/**/permissions/schemas
 **/.tauri
 apps/devtex/src-tauri/gen
+# byte-exact copies of DevTex 1.0.6 profiles (migration test fixtures)
+apps/devtex/src/app/fixtures/

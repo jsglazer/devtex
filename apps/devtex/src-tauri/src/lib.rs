@@ -8,6 +8,7 @@
 
 pub mod bbt;
 pub mod commands;
+pub mod devstyle;
 pub mod error;
 pub mod fsguard;
 pub mod github;
@@ -34,6 +35,8 @@ fn app_state() -> AppState {
         watcher: Mutex::new(None),
         #[cfg(target_os = "macos")]
         theme_watcher: Mutex::new(None),
+        #[cfg(target_os = "macos")]
+        devstyle_watcher: Mutex::new(None),
         #[cfg(target_os = "macos")]
         runner: Arc::new(latexmk::SystemRunner::default()),
         #[cfg(target_os = "macos")]
@@ -67,6 +70,14 @@ pub fn run() {
                 if let Ok(w) = watcher::mac::watch_themes(app.handle().clone(), &dir.join("themes"))
                 {
                     if let Ok(mut g) = app.state::<AppState>().theme_watcher.lock() {
+                        *g = Some(w);
+                    }
+                }
+            }
+            // DevStyle: follow style changes made by other apps; a failure only costs the live update
+            if let Ok(dir) = commands::devstyle_dir(app.handle()) {
+                if let Ok(w) = watcher::mac::watch_devstyle(app.handle().clone(), &dir) {
+                    if let Ok(mut g) = app.state::<AppState>().devstyle_watcher.lock() {
                         *g = Some(w);
                     }
                 }
@@ -107,6 +118,11 @@ pub fn run() {
             commands::write_config,
             commands::list_syntax_files,
             commands::list_theme_files,
+            commands::delete_theme_file,
+            commands::devstyle_read,
+            commands::devstyle_write,
+            commands::devstyle_list,
+            commands::devstyle_location,
             commands::config_location,
             commands::open_config_folder,
             commands::system_appearance,

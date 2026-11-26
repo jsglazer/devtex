@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-devstyle-location"
+description = "Enables the devstyle_location command without any pre-configured scope."
+commands.allow = ["devstyle_location"]
+
+[[permission]]
+identifier = "deny-devstyle-location"
+description = "Denies the devstyle_location command without any pre-configured scope."
+commands.deny = ["devstyle_location"]

@@ -117,9 +117,24 @@ pub fn list_syntax_files(dir: &Path) -> AppResult<Vec<String>> {
     list_config_dir(dir, "syntax", ".json")
 }
 
-/// Style profiles and user.css: `themes/<name>.css`, sorted.
+/// user.css and any DevTex 1.0.5–1.0.6 style profiles: `themes/<name>.css`, sorted.
 pub fn list_theme_files(dir: &Path) -> AppResult<Vec<String>> {
     list_config_dir(dir, "themes", ".css")
+}
+
+/// Delete a DevTex 1.0.5–1.0.6 style profile once it has moved to DevStyle.
+/// Only `themes/<name>.css`, never `themes/user.css`; a missing file is fine.
+pub fn delete_theme_file(dir: &Path, name: &str) -> AppResult<()> {
+    if !name.starts_with("themes/") || name == "themes/user.css" {
+        return Err(AppError::ConfigName {
+            name: name.to_string(),
+        });
+    }
+    let p = config_path(dir, name)?;
+    match std::fs::remove_file(&p) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
 }
 
 /// Injectable secret storage (Keychain in the app, memory in tests).
@@ -344,5 +359,26 @@ mod tests {
         assert_eq!(s.get(TOKEN_NAME).unwrap().as_deref(), Some("t"));
         s.delete(TOKEN_NAME).unwrap();
         assert_eq!(s.get(TOKEN_NAME).unwrap(), None);
+    }
+
+    #[test]
+    fn delete_theme_file_removes_old_profiles_only() {
+        let d = tempdir().unwrap();
+        write_config(d.path(), "themes/Paper Dark.css", "x").unwrap();
+        write_config(d.path(), "themes/user.css", "u").unwrap();
+        delete_theme_file(d.path(), "themes/Paper Dark.css").unwrap();
+        assert!(!d.path().join("themes/Paper Dark.css").exists());
+        // already gone is fine
+        delete_theme_file(d.path(), "themes/Paper Dark.css").unwrap();
+        for bad in [
+            "themes/user.css",
+            "settings.jsonc",
+            "syntax/r.json",
+            "themes/../settings.jsonc",
+            "/etc/passwd",
+        ] {
+            assert!(delete_theme_file(d.path(), bad).is_err(), "{bad}");
+        }
+        assert!(d.path().join("themes/user.css").exists());
     }
 }

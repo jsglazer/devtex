@@ -17,13 +17,14 @@ describe('settings.jsonc', () => {
   });
   it('accepts JSONC with comments and trailing commas, overlaying defaults', () => {
     const r = loadSettings(
-      '// mine\n{ "editor": { "lineWrapping": false, }, "ui": { "theme": "Paper Light" } }',
+      '// mine\n{ "editor": { "lineWrapping": false, }, "ui": { "theme": "paper-light" } }',
     );
     expect(r.errors).toEqual([]);
     expect(r.value.editor.lineWrapping).toBe(false);
     expect(r.value.editor.hidePreamble).toBe(true);
-    expect(r.value.ui.theme).toBe('Paper Light');
-    expect(r.value.ui.themeDark).toBe('Default Dark');
+    expect(r.value.ui.theme).toBe('paper-light');
+    expect(r.value.ui.themeDark).toBe('default-dark');
+    expect(r.value.ui.followSharedStyle).toBe(true);
   });
   it('invalid JSON never crashes: defaults plus an error', () => {
     const r = loadSettings('{ "editor": ');
@@ -36,7 +37,7 @@ describe('settings.jsonc', () => {
     );
     expect(r.value.editor.lineWrapping).toBe(DEFAULT_SETTINGS.editor.lineWrapping);
     expect(r.value.ui.zoom).toBe(1);
-    expect(r.value.ui.themeDark).toBe('Default Dark');
+    expect(r.value.ui.themeDark).toBe('default-dark');
     expect(r.value.preview.timingHud).toBe(true);
     expect(r.errors).toHaveLength(4);
     expect(DEFAULT_SETTINGS.preview.timingHud).toBe(false);

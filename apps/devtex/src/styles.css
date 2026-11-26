@@ -1,15 +1,18 @@
 /*
  * DevTex base stylesheet: layout only. Every colour and font comes from a
- * --dt-* variable set by the active style profile (themes/*.css, loaded into
- * @layer profile) and themes/user.css (@layer user). See the README for the
- * variable reference.
+ * --dt-* variable. Each --dt-* is defined (in @layer app-base, by the app) as
+ * the DevStyle --ds-* token it stands for, so the active DevStyle profile
+ * (@layer ds-profile) restyles DevTex; themes/user.css (@layer user) can set
+ * any --dt-* on top. See the README for the variable reference.
  *
- * Layer order: CodeMirror's own injected theme (cm) < base < profile < user,
- * so a profile always wins over the built-in look, whatever the specificity.
+ * Layer order: CodeMirror's own injected theme (cm) < app-base (this file and
+ * the aliases) < ds-profile < app-override < user, so a profile always wins
+ * over the built-in look, whatever the specificity. This statement must come
+ * before any other stylesheet so that cm stays the lowest layer.
  */
-@layer cm, base, profile, user;
+@layer cm, app-base, ds-profile, app-override, user;
 
-@layer base {
+@layer app-base {
   :root {
     color-scheme: light dark;
   }
@@ -562,7 +565,7 @@
     background: var(--dt-bg);
     color: var(--dt-fg);
     border-radius: 10px;
-    box-shadow: 0 10px 40px var(--dt-shadow);
+    box-shadow: var(--dt-dialog-shadow);
     width: min(560px, 92vw);
     max-height: 76vh;
     overflow: auto;

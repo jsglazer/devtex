@@ -98,14 +98,14 @@ export const EDITOR_THEME_SPEC: Record<string, Record<string, string>> = {
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--dt-editor-cursor)' },
   '.cm-gutters': {
     backgroundColor: 'var(--dt-editor-gutter)',
-    color: 'var(--dt-muted)',
+    color: 'var(--dt-editor-gutter-fg)',
     borderRight: '1px solid var(--dt-border)',
   },
   '.cm-activeLineGutter': { backgroundColor: 'var(--dt-editor-active-line)' },
   '.cm-activeLine': { backgroundColor: 'var(--dt-editor-active-line)' },
   '&.cm-focused .cm-matchingBracket': { backgroundColor: 'var(--dt-editor-matching-bracket)' },
   '.cm-selectionMatch': { backgroundColor: 'var(--dt-editor-selection-match)' },
-  '.cm-searchMatch': { backgroundColor: 'var(--dt-editor-selection-match)' },
+  '.cm-searchMatch': { backgroundColor: 'var(--dt-editor-search-match)' },
   '.cm-dt-broken': { backgroundColor: 'var(--dt-editor-broken)' },
   '.cm-dt-env-pair': { backgroundColor: 'var(--dt-editor-env-pair)' },
   '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':

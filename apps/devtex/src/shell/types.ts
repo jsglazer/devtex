@@ -99,6 +99,17 @@ export interface ConfirmOptions {
   cancelLabel?: string;
 }
 
+/** Raw access to DevStyle's shared folder; wrapped into a `FolderHost` by the app. */
+export interface DevStyleFolder {
+  read(path: string): Promise<string | null>;
+  write(path: string, text: string): Promise<void>;
+  list(dir: string): Promise<string[]>;
+  /** Where the folder is, for the Settings dialog. */
+  location(): Promise<string>;
+  /** Something in the folder changed (another app, or an edit by hand). */
+  onChanged(cb: () => void): Promise<() => void>;
+}
+
 export interface Shell {
   fs: ProjectFileSystem;
   bbtTransport: JsonRpcTransport;
@@ -119,8 +130,15 @@ export interface Shell {
   readConfig(name: string): Promise<string | null>;
   writeConfig(name: string, content: string): Promise<void>;
   listSyntaxFiles(): Promise<string[]>;
-  /** Style profiles and user.css: `themes/<name>.css`. */
+  /** user.css and any DevTex 1.0.5–1.0.6 profiles: `themes/<name>.css`. */
   listThemeFiles(): Promise<string[]>;
+  /** Delete a DevTex 1.0.5–1.0.6 profile (`themes/<name>.css`, never user.css) once migrated. */
+  deleteThemeFile(name: string): Promise<void>;
+  /**
+   * DevStyle's shared folder (macOS App Group container), as paths relative to
+   * it: `devstyle.json` and `profiles/<id>.css` only. Null where there is none (iOS).
+   */
+  devstyleFolder(): Promise<DevStyleFolder | null>;
   configLocation(): Promise<string>;
   /** Show the config folder in Finder (macOS). */
   openConfigFolder(): Promise<void>;
@@ -128,7 +146,7 @@ export interface Shell {
   systemAppearance(): Promise<'light' | 'dark' | null>;
   /** Force the native window appearance (title bar, scroll bars, controls); null follows the system. */
   setWindowAppearance(appearance: 'light' | 'dark' | null): Promise<void>;
-  /** A style profile or user.css was saved (macOS watcher): `themes/<name>.css` names. */
+  /** user.css was saved (macOS watcher): `themes/<name>.css` names. */
   onThemeChanged(cb: (names: string[]) => void): Promise<() => void>;
   /** File ▸ Open File…: native multi-file picker (macOS); null when unsupported. */
   pickFiles(): Promise<string[] | null>;

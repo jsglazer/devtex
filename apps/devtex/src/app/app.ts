@@ -15,7 +15,6 @@ import {
   diagnose,
   dirname,
   engineOf,
-  familyOf,
   loadKeymap,
   loadRecent,
   loadSettings,
@@ -38,12 +37,19 @@ import {
   type SyntaxDefinition,
   type Toolbar,
 } from '@devtex/core';
-import type { OpenRequest, PlatformInfo, ProjectInfo, Shell } from '../shell/types.js';
+import type { FolderHost } from '@devstyle/web';
+import type {
+  DevStyleFolder,
+  OpenRequest,
+  PlatformInfo,
+  ProjectInfo,
+  Shell,
+} from '../shell/types.js';
 import { planOpen } from './finder-open.js';
 import { errorText } from '../shell/types.js';
 import { CommandRegistry } from './commands.js';
 import { CM_COMMANDS, SourceEditor } from './editor.js';
-import { BUILTIN_FAMILIES, BUILTIN_PROFILES } from '../themes/index.js';
+import { BUILTIN_FAMILIES } from '../themes/index.js';
 import { OpenFiles } from './open-files.js';
 import { ProfileManager } from './profiles.js';
 import { domStyleSink } from './style-sink.js';
@@ -135,6 +141,8 @@ export class App {
   /** Files shown as tabs (every project file is still loaded for the preview). */
   private readonly tabs = new OpenFiles();
   private profiles!: ProfileManager;
+  /** DevStyle's shared folder (null without one, e.g. on iOS). */
+  private devstyle: DevStyleFolder | null = null;
   /** Native appearance DevTex forced on the window (null = following the system). */
   private forcedAppearance: Appearance | null = null;
   private lastSystemDark: boolean | null = null;
@@ -191,14 +199,25 @@ export class App {
   async start(): Promise<void> {
     this.platform = await this.shell.platform();
     document.body.dataset['platform'] = this.platform.os;
+    this.devstyle = await this.shell.devstyleFolder().catch(() => null);
+    const folder = this.devstyle;
+    const host: FolderHost | null =
+      folder === null
+        ? null
+        : {
+            read: (p) => folder.read(p),
+            write: (p, t) => folder.write(p, t),
+            list: (d) => folder.list(d),
+          };
     this.profiles = new ProfileManager(
       this.shell,
+      host,
       domStyleSink((a) => {
         this.forcedAppearance = a;
         return this.shell.setWindowAppearance(a);
       }),
-      BUILTIN_PROFILES,
     );
+    await this.profiles.install();
     await this.loadConfig();
     this.watchAppearance();
     this.editor = new SourceEditor(
@@ -343,7 +362,7 @@ export class App {
     errors.push(...s.errors);
     this.settings = s.value;
     if (s.legacy !== null) {
-      // 1.0.5: colours and editor fonts moved from settings.jsonc into the Default profiles
+      // 1.0.5: colours and editor fonts left settings.jsonc (now: changed values go to user.css)
       try {
         await this.profiles.migrate(s.legacy);
         await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
@@ -352,6 +371,16 @@ export class App {
           `settings.jsonc: could not move the old colour/font settings (${errorText(e)})`,
         );
       }
+    }
+    // 1.0.7: DevTex's own profiles (themes/*.css) moved to DevStyle
+    try {
+      const moved = await this.profiles.migrateThemes(this.settings.ui);
+      if (moved !== null) {
+        Object.assign(this.settings.ui, moved);
+        await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
+      }
+    } catch (e) {
+      errors.push(`themes/: could not move the style profiles to DevStyle (${errorText(e)})`);
     }
     const k = loadKeymap(await this.shell.readConfig('keymap.json'));
     errors.push(...k.errors);
@@ -411,7 +440,7 @@ export class App {
     await this.profiles.apply(this.settings.ui, dark);
   }
 
-  /** Live light/dark switching, hot reload of saved profiles, and the forced-appearance poll. */
+  /** Live light/dark switching, hot reload of profiles (DevStyle folder and user.css), and the forced-appearance poll. */
   private watchAppearance(): void {
     const reapply = async (): Promise<void> => {
       const dark = await this.systemDark();
@@ -427,6 +456,8 @@ export class App {
     void this.shell.onThemeChanged((names) => {
       if (this.profiles.affects(names)) void this.reapplyProfile();
     });
+    // another app (or an edit by hand) changed the shared choice or a profile
+    void this.devstyle?.onChanged(() => void this.reapplyProfile());
   }
 
   /** Re-apply the profile and refresh its problems in the Problems pane. */
@@ -440,48 +471,58 @@ export class App {
     this.renderProblems();
   }
 
-  /** Persist ui.theme / ui.themeDark and switch live. */
-  private async setProfiles(theme: string, themeDark: string): Promise<void> {
-    this.settings.ui.theme = theme;
-    this.settings.ui.themeDark = themeDark;
-    try {
-      await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
-    } catch (e) {
-      notice(`Could not save settings: ${errorText(e)}`);
+  /**
+   * Switch to a light/dark pair. While following the shared style this changes
+   * it for every app (devstyle.json); otherwise it sets DevTex's own
+   * ui.theme / ui.themeDark.
+   */
+  private async setProfiles(light: string, dark: string): Promise<void> {
+    if (this.settings.ui.followSharedStyle && this.profiles.canShare) {
+      try {
+        await this.profiles.setShared(light, dark);
+      } catch (e) {
+        notice(`Could not change the shared style: ${errorText(e)}`);
+      }
+    } else {
+      this.settings.ui.theme = light;
+      this.settings.ui.themeDark = dark;
+      try {
+        await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
+      } catch (e) {
+        notice(`Could not save settings: ${errorText(e)}`);
+      }
     }
     await this.reapplyProfile();
     const p = this.profiles.current;
     if (p !== null) this.setStatus(`Style profile: ${p.name}`);
   }
 
-  /** Select Style Profile: pick any profile; it fills the slot its name (or appearance) says. */
+  /** Select Style Profile: pick any profile; a matched pair switches both slots, otherwise its own slot. */
   private async selectStyleProfile(): Promise<void> {
-    const names = await this.profiles.available();
+    const profiles = await this.profiles.available();
+    const light = await this.profiles.chosen(this.settings.ui, 'light');
+    const dark = await this.profiles.chosen(this.settings.ui, 'dark');
     const pick = await pickDialog(
       'Select Style Profile',
-      names.map((n) => ({
-        label: n,
+      profiles.map((p) => ({
+        label: p.name,
         detail:
-          n === this.settings.ui.theme
-            ? 'light (current)'
-            : n === this.settings.ui.themeDark
-              ? 'dark (current)'
-              : '',
-        value: n,
+          p.id === light ? 'light (current)' : p.id === dark ? 'dark (current)' : p.appearance,
+        value: p.id,
       })),
     );
     if (pick === null) return;
-    const slot = /\bDark$/.test(pick)
-      ? 'dark'
-      : /\bLight$/.test(pick)
-        ? 'light'
-        : (this.profiles.current?.slot ?? 'light');
-    // a family with both variants switches both slots together
-    const family = familyOf(pick);
-    const pair = names.includes(`${family} Light`) && names.includes(`${family} Dark`);
-    if (pair && family !== pick) await this.setProfiles(`${family} Light`, `${family} Dark`);
-    else if (slot === 'dark') await this.setProfiles(this.settings.ui.theme, pick);
-    else await this.setProfiles(pick, this.settings.ui.themeDark);
+    const chosen = profiles.find((p) => p.id === pick);
+    if (chosen === undefined) return;
+    const other = profiles.find((p) => p.id === chosen.pair);
+    const paired =
+      other !== undefined && other.pair === chosen.id && other.appearance !== chosen.appearance;
+    if (paired)
+      await (chosen.appearance === 'light'
+        ? this.setProfiles(chosen.id, other.id)
+        : this.setProfiles(other.id, chosen.id));
+    else if (chosen.appearance === 'dark') await this.setProfiles(light, chosen.id);
+    else await this.setProfiles(chosen.id, dark);
   }
 
   private commandIdsWithEditor(): Set<string> {
@@ -1116,10 +1157,16 @@ export class App {
   }
 
   private async openSettings(): Promise<void> {
+    const shared = await this.profiles.sharedChoice();
     const res = await settingsDialog({
+      follow: this.settings.ui.followSharedStyle,
+      canShare: this.profiles.canShare,
+      shared: { light: shared.light, dark: shared.dark },
       theme: this.settings.ui.theme,
       themeDark: this.settings.ui.themeDark,
       profiles: await this.profiles.available(),
+      sharedLocation:
+        this.devstyle === null ? null : await this.devstyle.location().catch(() => null),
       overrides: await this.profiles.overrides(),
       current: (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(),
       configDir: await this.shell.configLocation(),
@@ -1137,8 +1184,18 @@ export class App {
     } catch (e) {
       notice(`Could not save themes/user.css: ${errorText(e)}`);
     }
-    this.settings.ui.theme = res.theme;
-    this.settings.ui.themeDark = res.themeDark;
+    this.settings.ui.followSharedStyle = res.follow;
+    if (res.follow && this.profiles.canShare) {
+      try {
+        if (res.theme !== shared.light || res.themeDark !== shared.dark)
+          await this.profiles.setShared(res.theme, res.themeDark);
+      } catch (e) {
+        notice(`Could not change the shared style: ${errorText(e)}`);
+      }
+    } else {
+      this.settings.ui.theme = res.theme;
+      this.settings.ui.themeDark = res.themeDark;
+    }
     await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
     await this.reloadConfig();
   }
@@ -1187,8 +1244,8 @@ export class App {
     for (const [suffix, family] of Object.entries(BUILTIN_FAMILIES))
       c.register({
         id: `view.styleProfile.${suffix}`,
-        title: `Style Profile: ${family}`,
-        run: () => this.setProfiles(`${family} Light`, `${family} Dark`),
+        title: `Style Profile: ${family.name}`,
+        run: () => this.setProfiles(family.light, family.dark),
       });
     c.register({
       id: 'file.save',

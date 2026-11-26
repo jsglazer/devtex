@@ -122,6 +122,17 @@ export const tauriShell: Shell = {
   writeConfig: (name, content) => call<void>('write_config', { name, content }),
   listSyntaxFiles: () => call<string[]>('list_syntax_files'),
   listThemeFiles: () => call<string[]>('list_theme_files'),
+  deleteThemeFile: (name) => call<void>('delete_theme_file', { name }),
+  devstyleFolder: async () =>
+    (await platformInfo()).os !== 'macos'
+      ? null
+      : {
+          read: (path) => call<string | null>('devstyle_read', { path }),
+          write: (path, text) => call<void>('devstyle_write', { path, text }),
+          list: (dir) => call<string[]>('devstyle_list', { dir }),
+          location: () => call<string>('devstyle_location'),
+          onChanged: (cb) => listen('devtex://devstyle-changed', () => cb()),
+        },
   configLocation: () => call<string>('config_location'),
   openConfigFolder: () => call<void>('open_config_folder'),
   systemAppearance: async () => {

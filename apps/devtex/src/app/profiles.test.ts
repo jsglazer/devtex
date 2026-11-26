@@ -1,23 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BUILTIN_PROFILES,
+  CONFIG_FILE,
+  LAYERS,
+  memoryHost,
+  parseHeader,
+  TOKENS,
+  type FolderHost,
+  type ProfileInfo,
+} from '@devstyle/web';
+import {
+  aliasStylesheet,
+  DEVTEX_LAYERS,
   loadSettings,
   parseCssColor,
-  profileAppearance,
   readManagedBlock,
   STYLE_VARIABLES,
   type Appearance,
 } from '@devtex/core';
-import { BUILTIN_FAMILIES, BUILTIN_PROFILES } from '../themes/index.js';
+import { BUILTIN_FAMILIES } from '../themes/index.js';
 import { layeredRule } from './cm-layer.js';
 import { EDITOR_THEME_SPEC } from './editor.js';
+import legacyDefaultDarkMigrated from './fixtures/legacy-Default-Dark-migrated105.css?raw';
+import legacyDefaultDark from './fixtures/legacy-Default-Dark.css?raw';
+import legacyDefaultLight from './fixtures/legacy-Default-Light.css?raw';
+import legacyPaperDark from './fixtures/legacy-Paper-Dark.css?raw';
 import { OpenFiles } from './open-files.js';
 import { isLinkClick } from './preview.js';
-import { ProfileManager, type ConfigStore, type StyleSink } from './profiles.js';
-import { COLOR_VARIABLES, nextOverrides } from './settings-ui.js';
+import { ProfileManager, type ConfigStore, type StyleChoice, type StyleSink } from './profiles.js';
+import { COLOR_VARIABLES, nextOverrides, profileOptions } from './settings-ui.js';
 
 class MemoryConfig implements ConfigStore {
   readonly files = new Map<string, string>();
   writes: string[] = [];
+  deleted: string[] = [];
   failRead = new Set<string>();
   constructor(init: Record<string, string> = {}) {
     for (const [k, v] of Object.entries(init)) this.files.set(k, v);
@@ -33,6 +49,11 @@ class MemoryConfig implements ConfigStore {
   }
   listThemeFiles(): Promise<string[]> {
     return Promise.resolve([...this.files.keys()].filter((k) => k.startsWith('themes/')).sort());
+  }
+  deleteThemeFile(name: string): Promise<void> {
+    this.deleted.push(name);
+    this.files.delete(name);
+    return Promise.resolve();
   }
 }
 
@@ -51,119 +72,211 @@ class RecordingSink implements StyleSink {
   }
 }
 
-const ui = (theme: string, themeDark: string): { theme: string; themeDark: string } => ({
+const own = (theme: string, themeDark: string): StyleChoice => ({
+  followSharedStyle: false,
   theme,
   themeDark,
 });
+const follow: StyleChoice = {
+  followSharedStyle: true,
+  theme: 'default-light',
+  themeDark: 'default-dark',
+};
 
-describe('built-in profiles', () => {
-  it('ship Default, Paper, High Contrast and Solarized as Light/Dark pairs', () => {
-    for (const family of Object.values(BUILTIN_FAMILIES))
-      for (const v of ['Light', 'Dark'])
-        expect(BUILTIN_PROFILES[`${family} ${v}`], `${family} ${v}`).toBeDefined();
-    expect(Object.keys(BUILTIN_PROFILES)).toHaveLength(8);
-  });
-  it('declare an appearance header matching their name and set every documented variable', () => {
-    for (const [name, css] of Object.entries(BUILTIN_PROFILES)) {
-      expect(profileAppearance(css), name).toBe(name.endsWith('Dark') ? 'dark' : 'light');
-      for (const v of STYLE_VARIABLES) expect(css, `${name} ${v.name}`).toContain(`${v.name}:`);
+/** A shared folder with the built-ins installed and the given extra files. */
+async function sharedFolder(
+  extra: Record<string, string> = {},
+): Promise<ReturnType<typeof memoryHost>> {
+  const host = memoryHost(extra);
+  const pm = new ProfileManager(new MemoryConfig(), host, new RecordingSink());
+  await pm.install();
+  return host;
+}
+
+const failingHost: FolderHost = {
+  read: () => Promise.reject(new Error('operation not permitted')),
+  write: () => Promise.reject(new Error('operation not permitted')),
+  list: () => Promise.reject(new Error('operation not permitted')),
+};
+
+describe('DevStyle variables', () => {
+  const tokens = new Set(TOKENS.map((t) => t.name));
+  it('every --dt-* stands for a real DevStyle token or has its own value', () => {
+    for (const v of STYLE_VARIABLES) {
+      if (v.ds === null) expect(v.fallback, v.name).toBeDefined();
+      else expect(tokens.has(v.ds), `${v.name} -> --ds-${v.ds}`).toBe(true);
     }
   });
-  it('highlight colours are parseable by the Settings colour picker', () => {
-    for (const [name, css] of Object.entries(BUILTIN_PROFILES))
-      for (const v of Object.keys(COLOR_VARIABLES)) {
-        const m = new RegExp(`${v}:\\s*([^;]+);`).exec(css);
-        expect(parseCssColor(m?.[1] ?? ''), `${name} ${v}`).not.toBeNull();
-      }
+  it('the alias sheet defines every --dt-* once, through var(--ds-*)', () => {
+    const css = aliasStylesheet();
+    for (const v of STYLE_VARIABLES) {
+      const decls = css.match(new RegExp(`${v.name}:`, 'g')) ?? [];
+      expect(decls, v.name).toHaveLength(1);
+      expect(css).toContain(
+        v.ds === null ? `${v.name}: ${v.fallback ?? ''};` : `${v.name}: var(--ds-${v.ds});`,
+      );
+    }
   });
-  it('the PDF filter is empty (none) in the light profiles', () => {
-    for (const [name, css] of Object.entries(BUILTIN_PROFILES))
-      if (name.endsWith('Light')) expect(css, name).toContain('--dt-pdf-filter: none;');
+  it('every built-in DevStyle profile sets every token an alias needs', () => {
+    for (const [id, css] of Object.entries(BUILTIN_PROFILES))
+      for (const v of STYLE_VARIABLES)
+        if (v.ds !== null) expect(css, `${id} --ds-${v.ds}`).toContain(`--ds-${v.ds}:`);
+  });
+  it("DevTex's layer order is DevStyle's, with CodeMirror's layer below it", () => {
+    expect(DEVTEX_LAYERS.slice(1)).toEqual([...LAYERS]);
+    expect(DEVTEX_LAYERS[0]).toBe('cm');
+  });
+  it('the menu families are real DevStyle pairs', () => {
+    for (const f of Object.values(BUILTIN_FAMILIES)) {
+      expect(parseHeader(BUILTIN_PROFILES[f.light] ?? '')?.pair, f.name).toBe(f.dark);
+      expect(parseHeader(BUILTIN_PROFILES[f.dark] ?? '')?.appearance, f.name).toBe('dark');
+    }
+  });
+  it('highlight colours the Settings dialog edits are parseable colours in every built-in', () => {
+    for (const [id, css] of Object.entries(BUILTIN_PROFILES))
+      for (const variable of Object.keys(COLOR_VARIABLES)) {
+        const ds = STYLE_VARIABLES.find((x) => x.name === variable)?.ds ?? 'x';
+        const m = new RegExp(`--ds-${ds}:\\s*([^;]+);`).exec(css);
+        expect(parseCssColor(m?.[1] ?? ''), `${id} ${variable}`).not.toBeNull();
+      }
   });
 });
 
 describe('ProfileManager', () => {
-  it('copies a built-in into themes/ on first use and never overwrites an edited file', async () => {
-    const store = new MemoryConfig();
-    const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
-    await pm.apply(ui('Paper Light', 'Paper Dark'), false);
-    expect(store.files.get('themes/Paper Light.css')).toBe(BUILTIN_PROFILES['Paper Light']);
-    expect(sink.profile.endsWith(BUILTIN_PROFILES['Paper Light'] ?? 'x')).toBe(true);
-    store.files.set('themes/Paper Light.css', '/* mine */ :root { --dt-bg: red; }');
-    store.writes = [];
-    await pm.apply(ui('Paper Light', 'Paper Dark'), false);
-    expect(store.writes).toEqual([]);
-    expect(sink.profile).toContain('--dt-bg: red');
+  it('installs the built-ins and devstyle.json into the shared folder without overwriting', async () => {
+    const host = memoryHost({ 'profiles/paper-light.css': '/* mine */' });
+    const pm = new ProfileManager(new MemoryConfig(), host, new RecordingSink());
+    const written = await pm.install();
+    expect(written).toContain(CONFIG_FILE);
+    expect(written).not.toContain('profiles/paper-light.css');
+    expect(host.files.get('profiles/paper-light.css')).toBe('/* mine */');
+    expect(await pm.install()).toEqual([]);
   });
-  it('follows the system appearance: light slot vs dark slot', async () => {
-    const store = new MemoryConfig();
+  it('follows the shared choice, and the system appearance picks light or dark', async () => {
+    const host = await sharedFolder();
     const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
-    expect((await pm.apply(ui('Paper Light', 'Solarized Dark'), true)).name).toBe('Solarized Dark');
-    expect(sink.appearance).toEqual({ own: 'dark', forced: null });
-    expect((await pm.apply(ui('Paper Light', 'Solarized Dark'), false)).name).toBe('Paper Light');
+    const pm = new ProfileManager(new MemoryConfig(), host, sink);
+    await pm.setShared('paper-light', 'solarized-dark');
+    expect((await pm.apply(follow, false)).id).toBe('paper-light');
     expect(sink.appearance).toEqual({ own: 'light', forced: null });
+    expect((await pm.apply(follow, true)).id).toBe('solarized-dark');
+    expect(sink.appearance).toEqual({ own: 'dark', forced: null });
+    expect(pm.problems).toEqual([]);
+  });
+  it('a change made by another app shows on the next apply', async () => {
+    const host = await sharedFolder();
+    const pm = new ProfileManager(new MemoryConfig(), host, new RecordingSink());
+    expect((await pm.apply(follow, false)).id).toBe('default-light');
+    await host.write(
+      CONFIG_FILE,
+      JSON.stringify({ version: 1, light: 'paper-light', dark: 'paper-dark' }),
+    );
+    expect((await pm.apply(follow, false)).id).toBe('paper-light');
+  });
+  it('"Use my own" ignores the shared choice', async () => {
+    const host = await sharedFolder();
+    const pm = new ProfileManager(new MemoryConfig(), host, new RecordingSink());
+    await pm.setShared('paper-light', 'paper-dark');
+    expect((await pm.apply(own('solarized-light', 'default-dark'), false)).id).toBe(
+      'solarized-light',
+    );
+    expect(await pm.chosen(own('solarized-light', 'default-dark'), 'light')).toBe(
+      'solarized-light',
+    );
+    expect(await pm.chosen(follow, 'light')).toBe('paper-light');
+  });
+  it('an edited profile in the folder wins over the built-in copy', async () => {
+    const mine =
+      '/* devstyle: name="Paper Light" appearance=light pair=paper-dark */\n:root { --ds-accent: #008080; }';
+    const host = await sharedFolder({ 'profiles/paper-light.css': mine });
+    const sink = new RecordingSink();
+    const pm = new ProfileManager(new MemoryConfig(), host, sink);
+    await pm.apply(own('paper-light', 'paper-dark'), false);
+    expect(sink.profile).toContain('--ds-accent: #008080');
   });
   it('forces the window appearance when a profile disagrees with the system', async () => {
     const sink = new RecordingSink();
-    const pm = new ProfileManager(new MemoryConfig(), sink, BUILTIN_PROFILES);
-    await pm.apply(ui('Solarized Dark', 'Default Dark'), false);
+    const pm = new ProfileManager(new MemoryConfig(), await sharedFolder(), sink);
+    await pm.apply(own('solarized-dark', 'default-dark'), false);
     expect(sink.appearance).toEqual({ own: 'dark', forced: 'dark' });
   });
   it('falls back to Default and reports a missing profile', async () => {
     const sink = new RecordingSink();
-    const pm = new ProfileManager(new MemoryConfig(), sink, BUILTIN_PROFILES);
-    const p = await pm.apply(ui('Nope Light', 'Default Dark'), false);
-    expect(p.name).toBe('Default Light');
-    expect(sink.profile).toBe(BUILTIN_PROFILES['Default Light']);
+    const pm = new ProfileManager(new MemoryConfig(), await sharedFolder(), sink);
+    const p = await pm.apply(own('nope-light', 'default-dark'), false);
+    expect(p.id).toBe('default-light');
+    expect(sink.profile).toBe(BUILTIN_PROFILES['default-light']);
     expect(pm.problems).toEqual([
-      'themes/Nope Light.css: style profile "Nope Light" not found (using Default Light)',
+      'DevStyle profiles/nope-light.css: style profile "nope-light" not found (using default-light)',
     ]);
   });
-  it('falls back to Default and reports an unreadable profile', async () => {
-    const store = new MemoryConfig({ 'themes/Mine.css': ':root{}' });
-    store.failRead.add('themes/Mine.css');
-    const pm = new ProfileManager(store, new RecordingSink(), BUILTIN_PROFILES);
-    const p = await pm.apply(ui('Default Light', 'Mine'), true);
-    expect(p.name).toBe('Default Dark');
-    expect(pm.problems[0]).toMatch(/^themes\/Mine\.css: could not be read \(permission denied\)/);
+  it('reports a broken devstyle.json and bad profile values, and still shows a profile', async () => {
+    const host = await sharedFolder({
+      [CONFIG_FILE]: '{ nope',
+      'profiles/mine-dark.css':
+        '/* devstyle: name="Mine Dark" appearance=dark pair=mine-light */\n:root { --ds-bg: red; }',
+    });
+    const pm = new ProfileManager(new MemoryConfig(), host, new RecordingSink());
+    expect((await pm.apply(follow, true)).id).toBe('default-dark');
+    expect(pm.problems[0]).toMatch(/^DevStyle devstyle\.json: not valid JSON/);
+    await pm.apply(own('default-light', 'mine-dark'), true);
+    expect(
+      pm.problems.some(
+        (m) => m.startsWith('DevStyle profiles/mine-dark.css:') && m.includes('--ds-bg'),
+      ),
+    ).toBe(true);
   });
-  it('a minimal profile sits on top of the slot’s Default, so unset variables keep a value', async () => {
-    const store = new MemoryConfig({ 'themes/Tiny.css': ':root { --dt-accent: teal; }' });
+  it('an unreadable shared folder falls back to the built-ins and says so', async () => {
     const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
-    await pm.apply(ui('Default Light', 'Tiny'), true);
-    expect(sink.profile.startsWith(BUILTIN_PROFILES['Default Dark'] ?? 'x')).toBe(true);
-    expect(sink.profile.indexOf('teal')).toBeGreaterThan(
-      sink.profile.indexOf('--dt-accent: #8f9bff'),
+    const pm = new ProfileManager(new MemoryConfig(), failingHost, sink);
+    await pm.install();
+    const p = await pm.apply(follow, true);
+    expect(p.id).toBe('default-dark');
+    expect(sink.profile).toBe(BUILTIN_PROFILES['default-dark']);
+    expect(pm.problems.join('\n')).toContain('could not install the built-in profiles');
+    expect(pm.problems.join('\n')).toContain(
+      'DevStyle folder: could not be read (operation not permitted)',
     );
+    expect((await pm.available()).length).toBe(8);
   });
-  it('a custom profile without a built-in loads from themes/', async () => {
-    const store = new MemoryConfig({ 'themes/Mine.css': ':root { --dt-accent: teal; }' });
+  it('a partial profile sits on top of the slot’s Default, so unset tokens keep a value', async () => {
+    const tiny =
+      '/* devstyle: name="Tiny" appearance=dark pair=default-light */\n:root { --ds-accent: #008080; }';
     const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
-    await pm.apply(ui('Mine', 'Default Dark'), false);
-    expect(sink.profile).toContain('teal');
-    expect(sink.appearance).toEqual({ own: null, forced: null });
-    expect(await pm.available()).toContain('Mine');
-    expect(await pm.available()).toContain('High Contrast Dark');
+    const pm = new ProfileManager(
+      new MemoryConfig(),
+      await sharedFolder({ 'profiles/tiny.css': tiny }),
+      sink,
+    );
+    await pm.apply(own('default-light', 'tiny'), true);
+    expect(sink.profile.startsWith(BUILTIN_PROFILES['default-dark'] ?? 'x')).toBe(true);
+    expect(sink.profile.indexOf('#008080')).toBeGreaterThan(sink.profile.indexOf('--ds-accent:'));
   });
-  it('applies user.css on top and only reports changes that affect the active profile', async () => {
+  it('without a shared folder (iOS) uses the built-ins and DevTex’s own choice', async () => {
+    const pm = new ProfileManager(new MemoryConfig(), null, new RecordingSink());
+    expect(pm.canShare).toBe(false);
+    expect(await pm.install()).toEqual([]);
+    expect((await pm.apply(follow, false)).id).toBe('default-light');
+    expect((await pm.apply({ ...follow, theme: 'paper-light' }, false)).id).toBe('paper-light');
+    expect((await pm.available()).map((p) => p.id)).toContain('high-contrast-dark');
+    await expect(pm.setShared('paper-light', 'paper-dark')).rejects.toThrow();
+  });
+  it('applies user.css on top and reloads only for user.css changes', async () => {
     const store = new MemoryConfig({ 'themes/user.css': ':root { --dt-bg: pink; }' });
     const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
-    await pm.apply(ui('Default Light', 'Default Dark'), false);
+    const pm = new ProfileManager(store, await sharedFolder(), sink);
+    await pm.apply(follow, false);
     expect(sink.user).toContain('pink');
-    expect(pm.affects(['themes/Default Light.css'])).toBe(true);
     expect(pm.affects(['themes/user.css'])).toBe(true);
     expect(pm.affects(['themes/Paper Light.css'])).toBe(false);
   });
   it('the Settings overrides go into the managed block of user.css, never into a profile', async () => {
     const store = new MemoryConfig({ 'themes/user.css': '.cm-line { letter-spacing: 1px; }\n' });
     const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
-    await pm.apply(ui('Default Light', 'Default Dark'), false);
+    const host = await sharedFolder();
+    const before = new Map(host.files);
+    const pm = new ProfileManager(store, host, sink);
+    await pm.apply(follow, false);
     store.writes = [];
     await pm.saveOverrides(new Map([['--dt-editor-size', '16px']]));
     expect(store.writes).toEqual(['themes/user.css']);
@@ -172,52 +285,183 @@ describe('ProfileManager', () => {
     expect(readManagedBlock(user).get('--dt-editor-size')).toBe('16px');
     expect(sink.user).toBe(user);
     expect(await pm.overrides()).toEqual(new Map([['--dt-editor-size', '16px']]));
+    expect(host.files).toEqual(before);
   });
 });
 
-describe('migration from settings.jsonc', () => {
+describe('migration from settings.jsonc (DevTex 1.0.4)', () => {
   const old =
-    '{ "editor": { "fontFamily": "Fira Code", "fontSize": 16, "lineHeight": 1.4, "lineWrapping": true }, "colors": { "currentLine": "#223344", "matchingBracket": "rgba(1, 2, 3, 0.5)" } }';
-  it('writes the old values into Default Light and Default Dark', async () => {
-    const legacy = loadSettings(old).legacy;
-    const store = new MemoryConfig();
-    const pm = new ProfileManager(store, new RecordingSink(), BUILTIN_PROFILES);
-    const written = await pm.migrate(legacy);
-    expect(written).toEqual(['themes/Default Light.css', 'themes/Default Dark.css']);
-    for (const f of written) {
-      const css = store.files.get(f) ?? '';
-      expect(css.startsWith(BUILTIN_PROFILES[f.slice(7, -4)]?.trimEnd() ?? 'x')).toBe(true);
-      expect(css).toContain('--dt-editor-font: Fira Code;');
-      expect(css).toContain('--dt-editor-size: 16px;');
-      expect(css).toContain('--dt-editor-active-line: #223344;');
-      expect(css).toContain('--dt-editor-matching-bracket: rgba(1, 2, 3, 0.5);');
-    }
-    expect(pm.notes[0]).toMatch(
-      /^settings\.jsonc: editor\.fontFamily, .* moved to themes\/Default Light\.css and themes\/Default Dark\.css/,
-    );
-  });
-  it('the migrated values win over the profile and show up after apply', async () => {
-    const store = new MemoryConfig();
-    const sink = new RecordingSink();
-    const pm = new ProfileManager(store, sink, BUILTIN_PROFILES);
+    '{ "editor": { "fontFamily": "Fira Code", "fontSize": 14, "lineHeight": 1.4, "lineWrapping": true }, "colors": { "currentLine": "rgba(120, 120, 180, 0.10)", "matchingBracket": "rgba(1, 2, 3, 0.5)" } }';
+  it('moves the changed values into user.css and drops the ones still at their defaults', async () => {
+    const store = new MemoryConfig({ 'themes/user.css': '/* mine */\n' });
+    const pm = new ProfileManager(store, await sharedFolder(), new RecordingSink());
     await pm.migrate(loadSettings(old).legacy);
-    await pm.apply(ui('Default Light', 'Default Dark'), false);
-    expect(sink.profile.lastIndexOf('--dt-editor-size: 16px')).toBeGreaterThan(
-      sink.profile.indexOf('--dt-editor-size: 14px'),
+    const user = store.files.get('themes/user.css') ?? '';
+    expect(user.startsWith('/* mine */')).toBe(true);
+    expect(readManagedBlock(user)).toEqual(
+      new Map([
+        ['--dt-editor-font', 'Fira Code'],
+        ['--dt-editor-line-height', '1.4'],
+        ['--dt-editor-matching-bracket', 'rgba(1, 2, 3, 0.5)'],
+      ]),
+    );
+    expect(pm.notes[0]).toMatch(
+      /^settings\.jsonc: editor\.fontFamily, .* removed \(your values moved to themes\/user\.css\)/,
     );
   });
-  it('never overwrites a Default profile that already exists', async () => {
-    const store = new MemoryConfig({ 'themes/Default Light.css': '/* mine */' });
-    const pm = new ProfileManager(store, new RecordingSink(), BUILTIN_PROFILES);
-    expect(await pm.migrate(loadSettings(old).legacy)).toEqual(['themes/Default Dark.css']);
-    expect(store.files.get('themes/Default Light.css')).toBe('/* mine */');
-    expect(pm.notes[0]).toContain('already existed and was left unchanged');
-  });
-  it('nothing to migrate without the old keys', async () => {
+  it('writes nothing when every value is at its old default', async () => {
     const store = new MemoryConfig();
-    const pm = new ProfileManager(store, new RecordingSink(), BUILTIN_PROFILES);
-    expect(await pm.migrate(loadSettings('{ "ui": { "zoom": 1 } }').legacy)).toEqual([]);
+    const pm = new ProfileManager(store, null, new RecordingSink());
+    await pm.migrate(
+      loadSettings(
+        '{ "editor": { "fontSize": 14 }, "colors": { "brokenCode": "rgba(230, 60, 60, 0.35)" } }',
+      ).legacy,
+    );
     expect(store.writes).toEqual([]);
+    expect(pm.notes[0]).toContain('they were at their defaults');
+    await pm.migrate(loadSettings('{ "ui": { "zoom": 1 } }').legacy);
+    expect(pm.notes).toHaveLength(1);
+  });
+});
+
+describe('migration from DevTex 1.0.5–1.0.6 profiles', () => {
+  const legacyUi = (theme: string, themeDark: string): StyleChoice => ({
+    followSharedStyle: true,
+    theme,
+    themeDark,
+  });
+  it('deletes untouched copies and maps their names to the DevStyle built-ins', async () => {
+    const store = new MemoryConfig({
+      'themes/Default Light.css': legacyDefaultLight,
+      'themes/Default Dark.css': legacyDefaultDarkMigrated,
+      'themes/user.css': '/* keep */',
+    });
+    const host = await sharedFolder();
+    const before = new Map(host.files);
+    const pm = new ProfileManager(store, host, new RecordingSink());
+    const next = await pm.migrateThemes(legacyUi('Default Light', 'Default Dark'));
+    expect(next).toEqual({
+      followSharedStyle: true,
+      theme: 'default-light',
+      themeDark: 'default-dark',
+    });
+    expect(store.deleted.sort()).toEqual(['themes/Default Dark.css', 'themes/Default Light.css']);
+    expect(store.files.get('themes/user.css')).toBe('/* keep */');
+    expect(host.files).toEqual(before);
+    expect(await pm.migrateThemes(next ?? follow)).toBeNull();
+  });
+  it('turns an edited profile into a DevStyle profile, keeps showing it, and leaves other apps alone', async () => {
+    const edited = legacyPaperDark.replace('--dt-accent:', '--dt-accent: #008080; --dt-x-unused:');
+    const store = new MemoryConfig({
+      'themes/Paper Dark.css': edited,
+      'themes/My Theme.css':
+        '/* devtex: appearance=light */\n:root { --dt-bg: #fafafa; --dt-preview-math: teal; }',
+    });
+    const host = await sharedFolder();
+    const config = host.files.get(CONFIG_FILE);
+    const pm = new ProfileManager(store, host, new RecordingSink());
+    const next = await pm.migrateThemes(legacyUi('My Theme', 'Paper Dark'));
+    expect(next).toEqual({
+      followSharedStyle: false,
+      theme: 'my-theme-devtex',
+      themeDark: 'paper-dark-devtex',
+    });
+    expect(host.files.get(CONFIG_FILE)).toBe(config);
+    const paper = host.files.get('profiles/paper-dark-devtex.css') ?? '';
+    expect(parseHeader(paper)).toEqual({
+      name: 'Paper Dark (DevTex)',
+      appearance: 'dark',
+      pair: 'paper-light',
+    });
+    expect(paper).toContain('--ds-accent: #008080');
+    const mine = host.files.get('profiles/my-theme-devtex.css') ?? '';
+    expect(parseHeader(mine)).toEqual({
+      name: 'My Theme (DevTex)',
+      appearance: 'light',
+      pair: 'default-dark',
+    });
+    expect(mine).toContain('--ds-bg: #fafafa');
+    expect(mine).toContain('--dt-preview-math: teal');
+    expect(store.deleted.sort()).toEqual(['themes/My Theme.css', 'themes/Paper Dark.css']);
+    expect(pm.notes.join(' ')).toContain('Moved your edited profiles');
+    // the converted profile loads and shows
+    const sink = new RecordingSink();
+    const shown = new ProfileManager(store, host, sink);
+    expect((await shown.apply(next ?? follow, true)).id).toBe('paper-dark-devtex');
+    expect(shown.problems).toEqual([]);
+    expect(sink.profile).toContain('--ds-accent: #008080');
+  });
+  it('pairs an edited Light/Dark pair with each other', async () => {
+    const store = new MemoryConfig({
+      'themes/Default Light.css': `${legacyDefaultLight}\n.x { color: red; }\n`,
+      'themes/Default Dark.css': legacyDefaultDark.replace('#8f9bff', '#9fabff'),
+    });
+    const host = await sharedFolder();
+    await new ProfileManager(store, host, new RecordingSink()).migrateThemes(
+      legacyUi('Default Light', 'Default Dark'),
+    );
+    const light = parseHeader(host.files.get('profiles/default-light-devtex.css') ?? '');
+    const dark = parseHeader(host.files.get('profiles/default-dark-devtex.css') ?? '');
+    expect(light?.pair).toBe('default-dark-devtex');
+    expect(dark?.pair).toBe('default-light-devtex');
+  });
+  it('never overwrites a DevStyle profile that already exists', async () => {
+    const store = new MemoryConfig({ 'themes/Paper Dark.css': `${legacyPaperDark}/* edit */\n` });
+    const host = await sharedFolder({ 'profiles/paper-dark-devtex.css': '/* already here */' });
+    await new ProfileManager(store, host, new RecordingSink()).migrateThemes(
+      legacyUi('Default Light', 'Paper Dark'),
+    );
+    expect(host.files.get('profiles/paper-dark-devtex.css')).toBe('/* already here */');
+  });
+  it('keeps the file and shows the built-in when the shared folder cannot be written', async () => {
+    const store = new MemoryConfig({ 'themes/Paper Dark.css': `${legacyPaperDark}/* edit */\n` });
+    const host: FolderHost = { ...memoryHost(), write: () => Promise.reject(new Error('denied')) };
+    const pm = new ProfileManager(store, host, new RecordingSink());
+    const next = await pm.migrateThemes(legacyUi('Default Light', 'Paper Dark'));
+    expect(next?.themeDark).toBe('paper-dark');
+    expect(next?.followSharedStyle).toBe(true);
+    expect(store.files.has('themes/Paper Dark.css')).toBe(true);
+    expect(pm.notes.join(' ')).toContain('could not be copied to DevStyle (denied)');
+  });
+  it('without a shared folder (iOS) maps names to the built-ins and keeps edited files', async () => {
+    const store = new MemoryConfig({
+      'themes/Paper Dark.css': `${legacyPaperDark}/* edit */\n`,
+      'themes/Default Light.css': legacyDefaultLight,
+    });
+    const pm = new ProfileManager(store, null, new RecordingSink());
+    const next = await pm.migrateThemes(legacyUi('Default Light', 'Paper Dark'));
+    expect(next).toEqual({
+      followSharedStyle: true,
+      theme: 'default-light',
+      themeDark: 'paper-dark',
+    });
+    expect(store.files.has('themes/Paper Dark.css')).toBe(true);
+    expect(store.deleted).toEqual(['themes/Default Light.css']);
+  });
+  it('converts settings that name a profile with no file left', async () => {
+    const pm = new ProfileManager(new MemoryConfig(), await sharedFolder(), new RecordingSink());
+    expect(await pm.migrateThemes(legacyUi('High Contrast Light', 'Gone Dark'))).toEqual({
+      followSharedStyle: true,
+      theme: 'high-contrast-light',
+      themeDark: 'default-dark',
+    });
+  });
+});
+
+describe('Settings dialog profile lists', () => {
+  const profiles: ProfileInfo[] = [
+    { id: 'paper-dark', name: 'Paper Dark', appearance: 'dark', pair: 'paper-light' },
+    { id: 'paper-light', name: 'Paper Light', appearance: 'light', pair: 'paper-dark' },
+  ];
+  it('lists the slot’s own appearance first and keeps a missing current value', () => {
+    expect(profileOptions(profiles, 'light', 'paper-light')).toEqual([
+      { value: 'paper-light', label: 'Paper Light' },
+      { value: 'paper-dark', label: 'Paper Dark (dark)' },
+    ]);
+    expect(profileOptions(profiles, 'dark', 'gone').at(-1)).toEqual({
+      value: 'gone',
+      label: 'gone (missing)',
+    });
   });
 });
 
