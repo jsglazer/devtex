@@ -185,14 +185,14 @@ plugins/tauri-plugin-ios-bookmarks  Swift/Rust Tauri plugin: vault bookmark + NS
 
 ## Building
 
-Requirements: macOS 14+, Xcode, Node 22+, pnpm 12, Rust (pinned in `rust-toolchain.toml`), TeX Live (for PDF compile), CocoaPods (for iOS).
+Requirements: macOS 14+, Xcode, Node 22+, pnpm 12, Rust (pinned in `rust-toolchain.toml`), cargo-audit (`cargo install cargo-audit --locked`, for `lint:rust`), TeX Live (for PDF compile), CocoaPods (for iOS).
 
 ```sh
 pnpm install
 pnpm -r test                 # TypeScript tests (Vitest)
 cargo test --workspace       # Rust tests
 (cd plugins/tauri-plugin-ios-bookmarks/ios/BookmarkCore && swift test)   # Swift tests
-pnpm lint && pnpm lint:rust  # ESLint + Prettier, rustfmt + clippy -D warnings
+pnpm lint && pnpm lint:rust  # ESLint + Prettier, rustfmt + clippy -D warnings + cargo audit
 
 cd apps/devtex
 pnpm tauri dev               # run the macOS app
