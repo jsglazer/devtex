@@ -1,0 +1,66 @@
+/* devtex: appearance=light */
+/*
+ * DevTex style profile: Paper Light. Warm paper tones and a book serif in the Preview.
+ * This file is yours to edit: DevTex never overwrites it. Delete it to get the
+ * built-in version back. Set any of the variables below (the stable contract,
+ * see the README), and add any other CSS you like.
+ */
+:root {
+  /* app */
+  --dt-bg: #f7f3ea;
+  --dt-fg: #2b2722;
+  --dt-muted: #7a7064;
+  --dt-border: #ddd3c2;
+  --dt-panel: #efe8da;
+  --dt-accent: #8a4b2a;
+  --dt-accent-fg: #ffffff;
+  --dt-error: #d33333;
+  --dt-warning: #cc8800;
+  --dt-success: #2e7d32;
+  --dt-sync: rgba(255, 200, 0, 0.35);
+  --dt-shadow: rgba(0, 0, 0, 0.3);
+  --dt-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --dt-font-size: 13px;
+  --dt-mono-font: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* editor */
+  --dt-editor-font: 'Iosevka', 'SF Mono', Menlo, monospace;
+  --dt-editor-size: 14px;
+  --dt-editor-line-height: 1.5;
+  --dt-editor-bg: #fbf8f1;
+  --dt-editor-fg: #2b2722;
+  --dt-editor-gutter: #f2ece0;
+  --dt-editor-cursor: #2b2722;
+  --dt-editor-selection: rgba(138, 75, 42, 0.16);
+  --dt-editor-active-line: rgba(138, 110, 60, 0.08);
+  --dt-editor-matching-bracket: rgba(80, 200, 120, 0.35);
+  --dt-editor-selection-match: rgba(255, 210, 0, 0.25);
+  --dt-editor-broken: rgba(230, 60, 60, 0.35);
+  --dt-editor-env-pair: rgba(80, 160, 255, 0.25);
+
+  /* syntax */
+  --dt-syntax-command: #8a4b2a;
+  --dt-syntax-env: #3c6e71;
+  --dt-syntax-atom: #9a6b00;
+  --dt-syntax-comment: #968a7a;
+  --dt-syntax-math: #4f6f3a;
+  --dt-syntax-number: #a33b3b;
+  --dt-syntax-bracket: #6d6457;
+  --dt-syntax-meta: #7b4b94;
+  --dt-syntax-error: #c0392b;
+
+  /* preview */
+  --dt-preview-font: 'Iowan Old Style', 'Charter', Georgia, serif;
+  --dt-preview-size: 17px;
+  --dt-preview-line-height: 1.6;
+  --dt-preview-heading-font: 'Iowan Old Style', Georgia, serif;
+  --dt-preview-fg: #2b2722;
+  --dt-preview-bg: #fbf8f1;
+  --dt-preview-link: #8a4b2a;
+  --dt-preview-math: currentColor;
+
+  /* pdf (pages are images: only their surroundings follow the profile) */
+  --dt-pdf-bg: #d9d0c0;
+  --dt-pdf-shadow: 0 1px 5px rgba(60, 40, 20, 0.35);
+  --dt-pdf-filter: none;
+}

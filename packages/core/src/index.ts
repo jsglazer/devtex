@@ -35,4 +35,5 @@ export * from './config/toolbars.js';
 export * from './config/recent.js';
 export * from './config/syntax.js';
 export * from './config/color.js';
+export * from './config/theme.js';
 export * from './zoom.js';

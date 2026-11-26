@@ -15,6 +15,7 @@ pub mod github;
 pub mod ios_store;
 pub mod latexmk;
 pub mod menu;
+pub mod navguard;
 pub mod store;
 pub mod watcher;
 
@@ -32,6 +33,8 @@ fn app_state() -> AppState {
         #[cfg(target_os = "macos")]
         watcher: Mutex::new(None),
         #[cfg(target_os = "macos")]
+        theme_watcher: Mutex::new(None),
+        #[cfg(target_os = "macos")]
         runner: Arc::new(latexmk::SystemRunner::default()),
         #[cfg(target_os = "macos")]
         paths: Arc::new(latexmk::PathCache::default()),
@@ -44,16 +47,32 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_ios_bookmarks::init())
+        .plugin(navguard::plugin())
         .manage(app_state());
 
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(menu::build).on_menu_event(|app, event| {
-        use tauri::Emitter;
-        let id = event.id().0.as_str();
-        if menu::command_ids().contains(id) {
-            let _ = app.emit(menu::MENU_EVENT, id.to_string());
-        }
-    });
+    let builder = builder
+        .menu(menu::build)
+        .on_menu_event(|app, event| {
+            use tauri::Emitter;
+            let id = event.id().0.as_str();
+            if menu::command_ids().contains(id) {
+                let _ = app.emit(menu::MENU_EVENT, id.to_string());
+            }
+        })
+        .setup(|app| {
+            // style-profile hot reload; a failure only costs the auto-reload
+            use tauri::Manager;
+            if let Ok(dir) = commands::config_dir(app.handle()) {
+                if let Ok(w) = watcher::mac::watch_themes(app.handle().clone(), &dir.join("themes"))
+                {
+                    if let Ok(mut g) = app.state::<AppState>().theme_watcher.lock() {
+                        *g = Some(w);
+                    }
+                }
+            }
+            Ok(())
+        });
 
     // iOS: route every project read/write through NSFileCoordinator (ios-bookmarks plugin).
     #[cfg(target_os = "ios")]
@@ -87,7 +106,11 @@ pub fn run() {
             commands::read_config,
             commands::write_config,
             commands::list_syntax_files,
+            commands::list_theme_files,
             commands::config_location,
+            commands::open_config_folder,
+            commands::system_appearance,
+            commands::resolve_open_paths,
             commands::take_opened_paths,
         ])
         .build(tauri::generate_context!());

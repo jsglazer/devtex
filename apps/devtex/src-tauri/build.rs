@@ -20,7 +20,11 @@ const COMMANDS: &[&str] = &[
     "read_config",
     "write_config",
     "list_syntax_files",
+    "list_theme_files",
     "config_location",
+    "open_config_folder",
+    "system_appearance",
+    "resolve_open_paths",
     "take_opened_paths",
 ];
 

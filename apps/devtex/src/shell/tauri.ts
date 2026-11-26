@@ -6,6 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message, open } from '@tauri-apps/plugin-dialog';
 import type {
   FileStamp,
@@ -120,7 +121,33 @@ export const tauriShell: Shell = {
   readConfig: (name) => call<string | null>('read_config', { name }),
   writeConfig: (name, content) => call<void>('write_config', { name, content }),
   listSyntaxFiles: () => call<string[]>('list_syntax_files'),
+  listThemeFiles: () => call<string[]>('list_theme_files'),
   configLocation: () => call<string>('config_location'),
+  openConfigFolder: () => call<void>('open_config_folder'),
+  systemAppearance: async () => {
+    const a = await call<string | null>('system_appearance').catch(() => null);
+    return a === 'dark' || a === 'light' ? a : null;
+  },
+  setWindowAppearance: async (appearance) => {
+    try {
+      await getCurrentWindow().setTheme(appearance);
+    } catch {
+      // platform without a native window theme (iOS): CSS color-scheme still applies
+    }
+  },
+  onThemeChanged: (cb) => listen<string[]>('devtex://theme-changed', (e) => cb(e.payload)),
+  pickFiles: async () => {
+    if ((await platformInfo()).os !== 'macos') return null;
+    const r = await open({
+      directory: false,
+      multiple: true,
+      title: 'Open LaTeX files',
+      filters: [{ name: 'LaTeX', extensions: ['tex', 'bib', 'sty', 'cls'] }],
+    });
+    if (r === null) return [];
+    return Array.isArray(r) ? r : [r];
+  },
+  resolveOpenPaths: (paths) => call<OpenRequest[]>('resolve_open_paths', { paths }),
   onFsChanged: (cb) => listen<string[]>('devtex://fs-changed', (e) => cb(e.payload)),
   onMenu: (cb) => listen<string>('devtex://menu', (e) => cb(e.payload)),
   onOpenFiles: (cb) => listen('devtex://open-files', () => cb()),

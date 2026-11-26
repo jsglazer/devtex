@@ -25,6 +25,9 @@ pub struct AppState {
     pub http: reqwest::Client,
     #[cfg(target_os = "macos")]
     pub watcher: Mutex<Option<crate::watcher::mac::ProjectWatcher>>,
+    /// Watches `<config>/themes` for style-profile hot reload.
+    #[cfg(target_os = "macos")]
+    pub theme_watcher: Mutex<Option<crate::watcher::mac::ProjectWatcher>>,
     #[cfg(target_os = "macos")]
     pub runner: Arc<crate::latexmk::SystemRunner>,
     #[cfg(target_os = "macos")]
@@ -52,7 +55,7 @@ impl AppState {
     }
 }
 
-fn config_dir(app: &AppHandle) -> AppResult<PathBuf> {
+pub(crate) fn config_dir(app: &AppHandle) -> AppResult<PathBuf> {
     #[cfg(target_os = "macos")]
     let dir = app.path().data_dir().map(|d| d.join("DevTex"));
     #[cfg(not(target_os = "macos"))]
@@ -342,8 +345,62 @@ pub async fn list_syntax_files(app: AppHandle) -> AppResult<Vec<String>> {
 }
 
 #[tauri::command]
+pub async fn list_theme_files(app: AppHandle) -> AppResult<Vec<String>> {
+    store::list_theme_files(&config_dir(&app)?)
+}
+
+#[tauri::command]
 pub async fn config_location(app: AppHandle) -> AppResult<String> {
     Ok(config_dir(&app)?.display().to_string())
+}
+
+/// Show the config folder in Finder (macOS), creating it first if needed.
+#[tauri::command]
+pub async fn open_config_folder(app: AppHandle) -> AppResult<()> {
+    let dir = config_dir(&app)?;
+    #[cfg(target_os = "macos")]
+    {
+        std::fs::create_dir_all(dir.join("themes"))?;
+        std::process::Command::new("/usr/bin/open")
+            .arg(&dir)
+            .status()?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = dir;
+        Err(AppError::NotSupported {
+            message: "Opening the config folder is macOS-only".into(),
+        })
+    }
+}
+
+/// The system's light/dark setting, independent of any appearance DevTex
+/// forced on its window: "dark" or "light" on macOS, null elsewhere.
+#[tauri::command]
+pub async fn system_appearance() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("/usr/bin/defaults")
+            .args(["read", "-g", "AppleInterfaceStyle"])
+            .output()
+            .ok()?;
+        Some(appearance_from_defaults(&String::from_utf8_lossy(&out.stdout)).to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// `defaults read -g AppleInterfaceStyle` prints "Dark" in dark mode and
+/// fails (empty stdout) in light mode.
+pub fn appearance_from_defaults(stdout: &str) -> &'static str {
+    if stdout.trim().eq_ignore_ascii_case("dark") {
+        "dark"
+    } else {
+        "light"
+    }
 }
 
 #[derive(Serialize)]
@@ -387,7 +444,7 @@ pub fn platform() -> PlatformInfo {
 }
 
 /// Commands registered with the app (also the ACL list in build.rs).
-pub const COMMANDS: [&str; 21] = [
+pub const COMMANDS: [&str; 25] = [
     "platform",
     "open_project",
     "list_files",
@@ -407,7 +464,11 @@ pub const COMMANDS: [&str; 21] = [
     "read_config",
     "write_config",
     "list_syntax_files",
+    "list_theme_files",
     "config_location",
+    "open_config_folder",
+    "system_appearance",
+    "resolve_open_paths",
     "take_opened_paths",
 ];
 
@@ -543,11 +604,31 @@ pub fn queue_opened(app: &AppHandle, paths: Vec<PathBuf>) {
     let _ = app.emit(OPEN_EVENT, ());
 }
 
+/// File ▸ Open File…: turn paths chosen in the open dialog into open
+/// requests (same rules as Finder: the project folder of each file).
+#[tauri::command]
+pub fn resolve_open_paths(paths: Vec<String>) -> Vec<OpenRequest> {
+    paths
+        .iter()
+        .filter_map(|p| open_request(std::path::Path::new(p)))
+        .collect()
+}
+
 #[tauri::command]
 pub fn take_opened_paths(state: State<'_, AppState>) -> Vec<OpenRequest> {
     match state.opened.lock() {
         Ok(mut g) => std::mem::take(&mut *g),
         Err(_) => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    #[test]
+    fn defaults_output_maps_to_appearance() {
+        assert_eq!(super::appearance_from_defaults("Dark\n"), "dark");
+        assert_eq!(super::appearance_from_defaults(""), "light");
+        assert_eq!(super::appearance_from_defaults("Light"), "light");
     }
 }
 

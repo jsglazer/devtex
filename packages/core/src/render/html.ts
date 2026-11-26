@@ -92,6 +92,8 @@ const EXTRA_SIGNATURES: Record<string, { signature: string }> = {
   institute: { signature: 'o m' },
   date: { signature: 'o m' },
   inst: { signature: 'm' },
+  // hyperref: the TeX branch is what the PDF shows; the second is for bookmarks
+  texorpdfstring: { signature: 'm m' },
 };
 
 /** Beamer environment signatures (overlay specs, frame options, block titles). */
@@ -309,6 +311,8 @@ const IGNORED = new Set([
   'cmidrule',
   'addlinespace',
   'phantomsection',
+  'boldmath',
+  'unboldmath',
   'addcontentsline',
   'frontmatter',
   'mainmatter',
@@ -747,6 +751,7 @@ class BlockRenderer {
       return `<span class="dt-structure">${this.renderNodes(lastMandatory(n)?.content ?? [])}</span>`;
     }
     if (BEAMER_CONTENT.has(name)) return this.renderNodes(lastMandatory(n)?.content ?? []);
+    if (name === 'texorpdfstring') return this.renderNodes(mandatoryArgs(n)[0]?.content ?? []);
     if (name === 'alt' || name === 'temporal') {
       // static preview: the first (default-slide) alternative
       const m = mandatoryArgs(n);

@@ -3,20 +3,13 @@
  * back to its default and is reported as an error string for the UI.
  */
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from 'jsonc-parser';
+import { extractLegacyStyle, isValidProfileName, type LegacyStyle } from './theme.js';
 
 export interface Settings {
   editor: {
-    fontFamily: string;
-    fontSize: number;
-    lineHeight: number;
     lineWrapping: boolean;
-  };
-  colors: {
-    currentLine: string;
-    matchingBracket: string;
-    brokenCode: string;
-    selectionMatch: string;
-    environmentPair: string;
+    /** Fold the preamble when a file is opened (Show/Hide Preamble toggles it). */
+    hidePreamble: boolean;
   };
   preview: {
     debounceMs: number;
@@ -34,32 +27,32 @@ export interface Settings {
   ui: {
     /** Whole-interface zoom (⌘+ / ⌘− / ⌘0), 0.5–3. */
     zoom: number;
+    /** Style profile (themes/<name>.css) used in light mode. */
+    theme: string;
+    /** Style profile used in dark mode. */
+    themeDark: string;
   };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   editor: {
-    fontFamily: 'SF Mono, Menlo, monospace',
-    fontSize: 14,
-    lineHeight: 1.5,
     lineWrapping: true,
-  },
-  colors: {
-    currentLine: 'rgba(120, 120, 180, 0.10)',
-    matchingBracket: 'rgba(80, 200, 120, 0.35)',
-    brokenCode: 'rgba(230, 60, 60, 0.35)',
-    selectionMatch: 'rgba(255, 210, 0, 0.25)',
-    environmentPair: 'rgba(80, 160, 255, 0.25)',
+    hidePreamble: true,
   },
   preview: { debounceMs: 120, timingHud: false },
   compile: { latexmkPath: '', badBoxes: 'none' },
   citations: { betterBibTex: true },
-  ui: { zoom: 1 },
+  ui: { zoom: 1, theme: 'Default Light', themeDark: 'Default Dark' },
 };
 
 export interface Loaded<T> {
   value: T;
   errors: string[];
+}
+
+export interface LoadedSettings extends Loaded<Settings> {
+  /** Pre-1.0.5 colour/font keys found in the file (to migrate into the Default profiles). */
+  legacy: LegacyStyle | null;
 }
 
 export function parseJsoncText(text: string, file: string, errors: string[]): unknown {
@@ -76,8 +69,6 @@ export function parseJsoncText(text: string, file: string, errors: string[]): un
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
-
-const CSS_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-zA-Z]+)$/;
 
 /** Overlay `input` on `defaults` key by key, type-checking against the default's type. */
 function merge<T extends Record<string, unknown>>(
@@ -106,13 +97,15 @@ function merge<T extends Record<string, unknown>>(
   return out as T;
 }
 
-export function loadSettings(text: string | null): Loaded<Settings> {
+export function loadSettings(text: string | null): LoadedSettings {
   const errors: string[] = [];
-  if (text === null) return { value: DEFAULT_SETTINGS, errors };
+  const fresh = (): Settings => JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as Settings;
+  if (text === null) return { value: fresh(), errors, legacy: null };
   const raw = parseJsoncText(text, 'settings.jsonc', errors);
-  if (raw === undefined) return { value: DEFAULT_SETTINGS, errors };
+  if (raw === undefined) return { value: fresh(), errors, legacy: null };
+  const legacy = extractLegacyStyle(raw);
   const s = merge(
-    DEFAULT_SETTINGS as unknown as Record<string, unknown>,
+    fresh() as unknown as Record<string, unknown>,
     raw,
     '',
     errors,
@@ -120,19 +113,19 @@ export function loadSettings(text: string | null): Loaded<Settings> {
   // range / enum validation
   const fixes: [boolean, () => void, string][] = [
     [
-      s.editor.fontSize < 6 || s.editor.fontSize > 72,
-      () => (s.editor.fontSize = DEFAULT_SETTINGS.editor.fontSize),
-      'editor.fontSize: must be 6–72',
-    ],
-    [
-      s.editor.lineHeight < 1 || s.editor.lineHeight > 3,
-      () => (s.editor.lineHeight = DEFAULT_SETTINGS.editor.lineHeight),
-      'editor.lineHeight: must be 1–3',
-    ],
-    [
       !(s.ui.zoom >= 0.5 && s.ui.zoom <= 3),
       () => (s.ui.zoom = DEFAULT_SETTINGS.ui.zoom),
       'ui.zoom: must be 0.5–3',
+    ],
+    [
+      !isValidProfileName(s.ui.theme),
+      () => (s.ui.theme = DEFAULT_SETTINGS.ui.theme),
+      'ui.theme: not a valid style profile name',
+    ],
+    [
+      !isValidProfileName(s.ui.themeDark),
+      () => (s.ui.themeDark = DEFAULT_SETTINGS.ui.themeDark),
+      'ui.themeDark: not a valid style profile name',
     ],
     [
       s.preview.debounceMs < 0 || s.preview.debounceMs > 2000,
@@ -151,13 +144,7 @@ export function loadSettings(text: string | null): Loaded<Settings> {
       errors.push(`${msg} (using default)`);
     }
   }
-  for (const k of Object.keys(s.colors) as (keyof Settings['colors'])[]) {
-    if (!CSS_COLOR_RE.test(s.colors[k])) {
-      errors.push(`colors.${k}: not a CSS colour (using default)`);
-      s.colors[k] = DEFAULT_SETTINGS.colors[k];
-    }
-  }
-  return { value: s, errors };
+  return { value: s, errors, legacy };
 }
 
 /** Serialize the three UI-editable groups back to JSONC (comments are not preserved). */

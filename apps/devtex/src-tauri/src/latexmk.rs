@@ -1,6 +1,7 @@
 //! PDF compile on macOS via the user's TeX Live `latexmk`.
 //!
-//! - Arguments: `-pdf` (or the engine flag), `-synctex=1`,
+//! - Arguments: `-norc` (a project's own latexmkrc is never run; the user's
+//!   `~/.latexmkrc` is re-added with `-r`), `-pdf` (or the engine flag), `-synctex=1`,
 //!   `-interaction=nonstopmode`, `-file-line-error`,
 //!   `-outdir=~/Library/Caches/DevTex/<project-hash>/`, so aux files never
 //!   enter the Obsidian Sync vault; only the final PDF is copied next to the
@@ -37,8 +38,23 @@ impl Engine {
 }
 
 /// latexmk argument vector (root file name relative to its folder, which is the cwd).
-pub fn latexmk_args(engine: Engine, root_file_name: &str, outdir: &Path) -> Vec<String> {
-    vec![
+///
+/// `-norc` stops latexmk from executing a `latexmkrc`/`.latexmkrc` shipped
+/// inside the project folder (it is Perl, run with the user's privileges);
+/// the user's own rc files are re-added explicitly with `-r`, before the
+/// engine flag so DevTex's options still win.
+pub fn latexmk_args(
+    engine: Engine,
+    root_file_name: &str,
+    outdir: &Path,
+    user_rc: &[PathBuf],
+) -> Vec<String> {
+    let mut args = vec!["-norc".to_string()];
+    for rc in user_rc {
+        args.push("-r".to_string());
+        args.push(rc.display().to_string());
+    }
+    args.extend([
         engine.flag().to_string(),
         "-synctex=1".to_string(),
         "-interaction=nonstopmode".to_string(),
@@ -46,7 +62,29 @@ pub fn latexmk_args(engine: Engine, root_file_name: &str, outdir: &Path) -> Vec<
         "-halt-on-error".to_string(),
         format!("-outdir={}", outdir.display()),
         root_file_name.to_string(),
+    ]);
+    args
+}
+
+/// The user's own latexmk rc files that latexmk would normally read (and
+/// that `-norc` skips): `$XDG_CONFIG_HOME/latexmk/latexmkrc` (default
+/// `~/.config/latexmk/latexmkrc`) and `~/.latexmkrc`, in that order, if present.
+pub fn user_rc_files(
+    home: Option<&Path>,
+    xdg_config: Option<&Path>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> Vec<PathBuf> {
+    let xdg = xdg_config
+        .map(Path::to_path_buf)
+        .or_else(|| home.map(|h| h.join(".config")));
+    [
+        xdg.map(|x| x.join("latexmk").join("latexmkrc")),
+        home.map(|h| h.join(".latexmkrc")),
     ]
+    .into_iter()
+    .flatten()
+    .filter(|p| exists(p))
+    .collect()
 }
 
 /// `<cache>/DevTex/<first 16 hex of sha256(root path)>`.
@@ -209,9 +247,12 @@ pub fn compile(
     mirror_subdirs(dir, &outdir)?;
     let path_env = paths.get(runner);
     let latexmk = find_latexmk(req.latexmk_override, &path_env, &|p| p.is_file())?;
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let user_rc = user_rc_files(home.as_deref(), xdg.as_deref(), &|p| p.is_file());
     let out = runner.run(
         &latexmk,
-        &latexmk_args(req.engine, &file_name, &outdir),
+        &latexmk_args(req.engine, &file_name, &outdir, &user_rc),
         dir,
         &path_env,
     )?;
@@ -359,10 +400,11 @@ mod tests {
 
     #[test]
     fn builds_the_required_latexmk_arguments() {
-        let args = latexmk_args(Engine::Pdflatex, "main.tex", Path::new("/c/DevTex/ab"));
+        let args = latexmk_args(Engine::Pdflatex, "main.tex", Path::new("/c/DevTex/ab"), &[]);
         assert_eq!(
             args,
             vec![
+                "-norc",
                 "-pdf",
                 "-synctex=1",
                 "-interaction=nonstopmode",
@@ -373,13 +415,72 @@ mod tests {
             ]
         );
         assert_eq!(
-            latexmk_args(Engine::Xelatex, "m.tex", Path::new("/o"))[0],
+            latexmk_args(Engine::Xelatex, "m.tex", Path::new("/o"), &[])[1],
             "-xelatex"
         );
         assert_eq!(
-            latexmk_args(Engine::Lualatex, "m.tex", Path::new("/o"))[0],
+            latexmk_args(Engine::Lualatex, "m.tex", Path::new("/o"), &[])[1],
             "-lualatex"
         );
+    }
+
+    /// Audit 20261123 (Low): a project-local latexmkrc must never be executed.
+    #[test]
+    fn project_latexmkrc_is_ignored_and_user_rc_is_re_added() {
+        let rc = vec![PathBuf::from("/Users/u/.latexmkrc")];
+        let args = latexmk_args(Engine::Pdflatex, "main.tex", Path::new("/o"), &rc);
+        assert_eq!(args[0], "-norc");
+        assert_eq!(&args[1..4], ["-r", "/Users/u/.latexmkrc", "-pdf"]);
+    }
+
+    #[test]
+    fn user_rc_files_follow_latexmk_lookup_order() {
+        let home = Path::new("/h");
+        let all = |_: &Path| true;
+        assert_eq!(
+            user_rc_files(Some(home), None, &all),
+            vec![
+                PathBuf::from("/h/.config/latexmk/latexmkrc"),
+                PathBuf::from("/h/.latexmkrc")
+            ]
+        );
+        assert_eq!(
+            user_rc_files(Some(home), Some(Path::new("/x")), &all)[0],
+            PathBuf::from("/x/latexmk/latexmkrc")
+        );
+        let only_dot = |p: &Path| p == Path::new("/h/.latexmkrc");
+        assert_eq!(
+            user_rc_files(Some(home), None, &only_dot),
+            vec![PathBuf::from("/h/.latexmkrc")]
+        );
+        assert!(user_rc_files(None, None, &all).is_empty());
+    }
+
+    #[test]
+    fn compile_passes_norc_even_when_the_project_has_a_latexmkrc() {
+        let vault = tempdir().unwrap();
+        let cache = tempdir().unwrap();
+        let bin = tempdir().unwrap();
+        std::fs::write(bin.path().join("latexmk"), "").unwrap();
+        std::fs::write(vault.path().join("latexmkrc"), "system('evil');").unwrap();
+        let root = vault.path().join("main.tex");
+        std::fs::write(&root, "x").unwrap();
+        let runner = FakeRunner {
+            shell_path: bin.path().display().to_string(),
+            calls: StdMutex::new(vec![]),
+            produce: vec![],
+            status: 0,
+            shell_calls: StdMutex::new(0),
+        };
+        let req = CompileRequest {
+            root_abs: &root,
+            engine: Engine::Pdflatex,
+            cache_base: cache.path(),
+            latexmk_override: None,
+        };
+        compile(&req, &runner, &PathCache::default()).unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls[0].1[0], "-norc");
     }
 
     #[test]

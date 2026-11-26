@@ -41,6 +41,31 @@ function readBraced(text: string, open: number): string | null {
   return null;
 }
 
+/**
+ * Section title for the outline (plain text): `\texorpdfstring{TeX}{text}`
+ * becomes its text branch and `\boldmath`/`\unboldmath` are dropped, so a
+ * heading with math reads as it does in a PDF viewer's bookmarks.
+ */
+export function outlineTitle(raw: string): string {
+  let t = raw;
+  for (;;) {
+    const i = t.search(/\\texorpdfstring\s*\{/);
+    if (i === -1) break;
+    const open1 = t.indexOf('{', i);
+    const a = readBraced(t, open1);
+    if (a === null) break;
+    let j = open1 + a.length + 2;
+    while (/\s/.test(t[j] ?? '')) j++;
+    const b = readBraced(t, j);
+    if (b === null) break;
+    t = t.slice(0, i) + b + t.slice(j + b.length + 2);
+  }
+  return t
+    .replace(/\\(?:un)?boldmath(?![A-Za-z@])/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function outlineOf(file: string, text: string): OutlineItem[] {
   const masked = maskNonCode(text);
   const starts = lineStarts(text);
@@ -67,7 +92,7 @@ export function outlineOf(file: string, text: string): OutlineItem[] {
       items.push({
         kind: 'section',
         level: SECTION_DEPTH[m[1]] ?? 2,
-        title: title.replace(/\s+/g, ' ').trim(),
+        title: outlineTitle(title),
         file,
         line,
       });

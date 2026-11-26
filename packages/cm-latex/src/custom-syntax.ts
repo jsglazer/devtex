@@ -2,6 +2,10 @@
  * Custom syntax highlighting from syntax/*.json definitions: each rule's
  * regex becomes a mark decoration with a generated class. "embedded" rules
  * apply only inside the listed environments (e.g. code chunks).
+ *
+ * A rule may leave out `color` and `fontStyle`: it then only gets its class
+ * (`.cm-dt-syn-<name>-<token>`), which a style profile styles. A colour given
+ * in the JSON still applies, as the lowest-priority default.
  */
 import { RangeSetBuilder, StateField, type EditorState, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, type DecorationSet } from '@codemirror/view';
@@ -81,7 +85,7 @@ export function customSyntax(defs: readonly SyntaxDefinition[]): Extension {
       if (r.fontStyle === 'bold') style['fontWeight'] = 'bold';
       if (r.fontStyle === 'italic') style['fontStyle'] = 'italic';
       if (r.fontStyle === 'underline') style['textDecoration'] = 'underline';
-      theme[`.${ruleClass(def, r.token)}`] = style;
+      if (Object.keys(style).length > 0) theme[`.${ruleClass(def, r.token)}`] = style;
     }
   }
   const field = StateField.define<DecorationSet>({

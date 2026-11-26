@@ -7,6 +7,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:window:allow-set-title",
+    "core:window:allow-set-theme",
     "core:webview:allow-set-webview-zoom",
     "dialog:allow-open",
     "dialog:allow-ask",
@@ -31,7 +32,11 @@
     "allow-read-config",
     "allow-write-config",
     "allow-list-syntax-files",
+    "allow-list-theme-files",
     "allow-config-location",
+    "allow-open-config-folder",
+    "allow-system-appearance",
+    "allow-resolve-open-paths",
     "allow-take-opened-paths"
   ]
 }

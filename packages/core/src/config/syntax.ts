@@ -8,7 +8,9 @@
  *     "rules": [ { "match": "\\\\todo\\b", "token": "todo", "color": "#d33", "fontStyle": "bold" } ]
  *   }
  *
- * Rules with invalid regexes or colours are dropped and reported.
+ * `color` and `fontStyle` are optional: without them a rule only gets the
+ * class `.cm-dt-syn-<name>-<token>`, for a style profile to style.
+ * Rules with invalid regexes are dropped and reported; invalid colours are ignored.
  */
 import { parseJsoncText, type Loaded } from './settings.js';
 

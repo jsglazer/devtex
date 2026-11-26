@@ -5,7 +5,7 @@ members = ["apps/devtex/src-tauri", "plugins/tauri-plugin-ios-bookmarks"]
 [workspace.package]
 edition = "2021"
 license = "MIT"
-version = "1.0.4"
+version = "1.0.5"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

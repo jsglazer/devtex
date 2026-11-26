@@ -11,7 +11,7 @@ import {
   renderBlockTemplate,
 } from './html.js';
 import type { MathRenderer } from './mathjax.js';
-import { MathJaxRenderer } from './mathjax.js';
+import { MATHJAX_PACKAGES, MathJaxRenderer } from './mathjax.js';
 
 /** Deterministic fake math renderer: records calls. */
 class FakeMath implements MathRenderer {
@@ -222,5 +222,27 @@ describe('beamer', () => {
     expect(columnWidth('.3\\linewidth')).toBe('30.0%');
     expect(columnWidth('40%')).toBe('40.0%');
     expect(columnWidth('5cm')).toBeNull();
+  });
+});
+
+describe('Update003 fixes', () => {
+  it('math in headings renders, including \\texorpdfstring and \\boldmath', () => {
+    const a = render('\\section{The $x^2$ term}');
+    expect(a).toContain('<mi>x^2</m>');
+    const b = render('\\section{\\texorpdfstring{$\\beta$}{beta} results}');
+    expect(b).toContain('<mi>\\beta</m>');
+    expect(b).not.toContain('dt-unsupported');
+    expect(b).not.toContain('beta results');
+    const c = render('\\subsection{\\boldmath $b$ bold}');
+    expect(c).toContain('<mi>b</m>');
+    expect(c).not.toContain('dt-unsupported');
+  });
+  it('MathJax has no html extension: \\href in math is not a live link (audit 20261123)', () => {
+    const m = new MathJaxRenderer();
+    const out = m.render('\\href{https://example.com}{x}', false);
+    expect(out).not.toContain('href="https://example.com"');
+    expect(out).not.toMatch(/<a[\s>]/);
+    expect(MATHJAX_PACKAGES).not.toContain('html');
+    expect(MATHJAX_PACKAGES).toContain('ams');
   });
 });

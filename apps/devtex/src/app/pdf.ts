@@ -282,6 +282,27 @@ export class PdfPane {
     c.scrollTop = Math.max(0, top + (y - 14) * pv.scale - 24);
   }
 
+  /**
+   * Scroll Lock, PDF -> editor: the source line at the top of the pane (the
+   * inverse of scrollToSource). Null without SyncTeX data or a project file there.
+   */
+  topSource(): { file: string; line: number } | null {
+    if (this.synctex === null) return null;
+    const c = this.container;
+    const edge = c.getBoundingClientRect().top + 24;
+    for (let i = 0; i < this.pages.length; i++) {
+      const pv = this.pages[i];
+      if (!pv) continue;
+      const r = pv.wrap.getBoundingClientRect();
+      if (r.bottom <= edge) continue;
+      const y = Math.max(0, Math.min(pv.heightPt, (edge - r.top) / pv.scale + 14));
+      const src = syncToSource(this.synctex, i + 1, pv.widthPt / 2, y, this.baseDir);
+      const rel = src ? this.toRel(src.file) : null;
+      return src && rel !== null ? { file: rel, line: src.line } : null;
+    }
+    return null;
+  }
+
   private drawMarker(pv: PageView, page: number, x: number, y: number, r0: Rect | null): void {
     this.marker = { page, x, y, rect: r0 };
     this.overlay?.remove();

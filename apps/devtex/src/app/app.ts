@@ -15,6 +15,7 @@ import {
   diagnose,
   dirname,
   engineOf,
+  familyOf,
   loadKeymap,
   loadRecent,
   loadSettings,
@@ -27,6 +28,7 @@ import {
   removeRecent,
   serializeRecent,
   serializeSettings,
+  type Appearance,
   type BbtItem,
   type CitationInfo,
   type KeyBinding,
@@ -41,6 +43,10 @@ import { planOpen } from './finder-open.js';
 import { errorText } from '../shell/types.js';
 import { CommandRegistry } from './commands.js';
 import { CM_COMMANDS, SourceEditor } from './editor.js';
+import { BUILTIN_FAMILIES, BUILTIN_PROFILES } from '../themes/index.js';
+import { OpenFiles } from './open-files.js';
+import { ProfileManager } from './profiles.js';
+import { domStyleSink } from './style-sink.js';
 import {
   formatHud,
   problemsFromDiagnostics,
@@ -50,6 +56,7 @@ import {
   renderProblems,
   renderTabs,
   renderToolbars,
+  updatePressed,
   type Problem,
 } from './panels.js';
 import { PdfPane } from './pdf.js';
@@ -78,6 +85,12 @@ const NO_PDF = 'No PDF. Compile (⌘R) to build one.';
 
 /** iOS: external-change poll interval while active (decision: every 5 s). */
 export const IOS_POLL_MS = 5000;
+
+/** While DevTex forces the window appearance, how often to re-read the system setting. */
+const APPEARANCE_POLL_MS = 5000;
+
+/** After one side of a Scroll Lock pair scrolls the other, ignore the echo for this long. */
+const SCROLL_ECHO_MS = 150;
 
 export class App {
   private platform: PlatformInfo = {
@@ -115,6 +128,17 @@ export class App {
   /** Scroll Lock: the Preview/PDF follows the editor's scroll position. */
   private scrollLock = localStorage.getItem('devtex.scrollLock') === '1';
   private scrollFrame: number | null = null;
+  private rightScrollFrame: number | null = null;
+  /** Scroll Lock echo suppression (performance.now() deadlines). */
+  private ignoreEditorScrollUntil = 0;
+  private ignoreRightScrollUntil = 0;
+  /** Files shown as tabs (every project file is still loaded for the preview). */
+  private readonly tabs = new OpenFiles();
+  private profiles!: ProfileManager;
+  /** Native appearance DevTex forced on the window (null = following the system). */
+  private forcedAppearance: Appearance | null = null;
+  private lastSystemDark: boolean | null = null;
+  private profileSeq = 0;
   /** Live preview text zoom (1 = 100%), persisted in localStorage. */
   private previewZoom = clampZoom(
     Number(localStorage.getItem('devtex.previewZoom') ?? '1'),
@@ -167,7 +191,16 @@ export class App {
   async start(): Promise<void> {
     this.platform = await this.shell.platform();
     document.body.dataset['platform'] = this.platform.os;
+    this.profiles = new ProfileManager(
+      this.shell,
+      domStyleSink((a) => {
+        this.forcedAppearance = a;
+        return this.shell.setWindowAppearance(a);
+      }),
+      BUILTIN_PROFILES,
+    );
     await this.loadConfig();
+    this.watchAppearance();
     this.editor = new SourceEditor(
       $('editor'),
       {
@@ -212,6 +245,8 @@ export class App {
     this.editor.view.scrollDOM.addEventListener('scroll', () => this.onEditorScroll(), {
       passive: true,
     });
+    for (const id of ['preview', 'pdf'] as const)
+      $(id).addEventListener('scroll', () => this.onRightScroll(), { passive: true });
     initSplitter($('splitter'), $('editor-pane'), $('right-pane'));
     this.updateZoomLabel();
     // ⌘+ (⇧⌘=) / ⌘− / ⌘0 when the macOS menu didn't take them (e.g. ⇧⌘=, iPad keyboards)
@@ -307,6 +342,17 @@ export class App {
     const s = loadSettings(await this.shell.readConfig('settings.jsonc'));
     errors.push(...s.errors);
     this.settings = s.value;
+    if (s.legacy !== null) {
+      // 1.0.5: colours and editor fonts moved from settings.jsonc into the Default profiles
+      try {
+        await this.profiles.migrate(s.legacy);
+        await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
+      } catch (e) {
+        errors.push(
+          `settings.jsonc: could not move the old colour/font settings (${errorText(e)})`,
+        );
+      }
+    }
     const k = loadKeymap(await this.shell.readConfig('keymap.json'));
     errors.push(...k.errors);
     this.bindings = k.value.bindings;
@@ -323,11 +369,9 @@ export class App {
     }
     this.configErrors = errors;
     this.recent = loadRecent(await this.shell.readConfig('recent.json'));
-    document.documentElement.style.setProperty(
-      '--dt-env-pair',
-      this.settings.colors.environmentPair,
-    );
-    document.documentElement.style.setProperty('--dt-broken', this.settings.colors.brokenCode);
+    await this.applyProfile();
+    errors.push(...this.profiles.problems);
+    this.configErrors = errors;
     if (errors.length > 0)
       notice(
         `Config problems: ${errors.length} (see Problems). Defaults are used for invalid values.`,
@@ -347,6 +391,99 @@ export class App {
     this.renderProblems();
   }
 
+  // ---------- style profiles ----------
+
+  /** The real system appearance, even while DevTex forces its window's. */
+  private async systemDark(): Promise<boolean> {
+    if (this.forcedAppearance !== null) {
+      const a = await this.shell.systemAppearance();
+      if (a !== null) return a === 'dark';
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  /** Show the profile for the current appearance (later calls win over slower earlier ones). */
+  private async applyProfile(): Promise<void> {
+    const seq = ++this.profileSeq;
+    const dark = await this.systemDark();
+    if (seq !== this.profileSeq) return;
+    this.lastSystemDark = dark;
+    await this.profiles.apply(this.settings.ui, dark);
+  }
+
+  /** Live light/dark switching, hot reload of saved profiles, and the forced-appearance poll. */
+  private watchAppearance(): void {
+    const reapply = async (): Promise<void> => {
+      const dark = await this.systemDark();
+      if (dark !== this.lastSystemDark) await this.reapplyProfile();
+    };
+    window
+      .matchMedia('(prefers-color-scheme: dark)')
+      .addEventListener('change', () => void reapply());
+    // a forced window no longer reports system changes to the webview
+    setInterval(() => {
+      if (this.forcedAppearance !== null) void reapply();
+    }, APPEARANCE_POLL_MS);
+    void this.shell.onThemeChanged((names) => {
+      if (this.profiles.affects(names)) void this.reapplyProfile();
+    });
+  }
+
+  /** Re-apply the profile and refresh its problems in the Problems pane. */
+  private async reapplyProfile(): Promise<void> {
+    const before = new Set(this.profiles.problems);
+    await this.applyProfile();
+    this.configErrors = [
+      ...this.configErrors.filter((m) => !before.has(m)),
+      ...this.profiles.problems,
+    ];
+    this.renderProblems();
+  }
+
+  /** Persist ui.theme / ui.themeDark and switch live. */
+  private async setProfiles(theme: string, themeDark: string): Promise<void> {
+    this.settings.ui.theme = theme;
+    this.settings.ui.themeDark = themeDark;
+    try {
+      await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
+    } catch (e) {
+      notice(`Could not save settings: ${errorText(e)}`);
+    }
+    await this.reapplyProfile();
+    const p = this.profiles.current;
+    if (p !== null) this.setStatus(`Style profile: ${p.name}`);
+  }
+
+  /** Select Style Profile: pick any profile; it fills the slot its name (or appearance) says. */
+  private async selectStyleProfile(): Promise<void> {
+    const names = await this.profiles.available();
+    const pick = await pickDialog(
+      'Select Style Profile',
+      names.map((n) => ({
+        label: n,
+        detail:
+          n === this.settings.ui.theme
+            ? 'light (current)'
+            : n === this.settings.ui.themeDark
+              ? 'dark (current)'
+              : '',
+        value: n,
+      })),
+    );
+    if (pick === null) return;
+    const slot = /\bDark$/.test(pick)
+      ? 'dark'
+      : /\bLight$/.test(pick)
+        ? 'light'
+        : (this.profiles.current?.slot ?? 'light');
+    // a family with both variants switches both slots together
+    const family = familyOf(pick);
+    const pair = names.includes(`${family} Light`) && names.includes(`${family} Dark`);
+    if (pair && family !== pick) await this.setProfiles(`${family} Light`, `${family} Dark`);
+    else if (slot === 'dark') await this.setProfiles(this.settings.ui.theme, pick);
+    else await this.setProfiles(pick, this.settings.ui.themeDark);
+  }
+
   private commandIdsWithEditor(): Set<string> {
     const ids = this.commands.ids();
     for (const id of Object.keys(CM_COMMANDS)) ids.add(id);
@@ -355,7 +492,8 @@ export class App {
 
   // ---------- project ----------
 
-  async openProject(path?: string): Promise<void> {
+  /** Open a project folder; `file` (project-relative) is the tab to show, else the main document. */
+  async openProject(path?: string, file?: string): Promise<void> {
     const chosen = path ?? (await this.shell.pickFolder());
     if (chosen === null) return;
     if (this.project && this.session.dirtyPaths().length > 0) {
@@ -378,9 +516,11 @@ export class App {
     if (this.platform.os !== 'ios')
       await this.saveRecent(addRecent(this.recent, this.project.root));
     this.preview.reset();
+    this.tabs.clear();
     await this.session.load();
     const tex = this.session.texPaths();
-    const first = tex.find((p) => this.session.rootFor(p).source === 'self') ?? tex[0];
+    const main = tex.find((p) => this.session.rootFor(p).source === 'self') ?? tex[0];
+    const first = file !== undefined && this.session.buffers.has(file) ? file : main;
     if (first === undefined) {
       notice('No .tex files in this folder.');
       this.renderTabs();
@@ -404,7 +544,7 @@ export class App {
   private async openFromFinder(req: OpenRequest): Promise<void> {
     const plan = planOpen(req, this.project?.root ?? null);
     if (plan.project !== null && plan.project !== this.project?.root) {
-      await this.openProject(plan.project);
+      await this.openProject(plan.project, plan.file ?? undefined);
       if (this.project?.root !== plan.project) return; // cancelled (unsaved changes) or failed
     }
     if (plan.file === null) return;
@@ -415,12 +555,81 @@ export class App {
   openFile(path: string): void {
     const b = this.session.buffers.get(path);
     if (!b) return;
+    this.tabs.add(path);
     this.editor.open(path, b.text);
     this.root = this.session.rootFor(path).root;
     this.refreshPreview(true);
     this.renderTabs();
     this.renderOutline();
     this.renderProblems();
+    this.updateToggles();
+  }
+
+  /** Close a tab (asks to save unsaved changes first). */
+  private async closeFile(path: string): Promise<void> {
+    if (path === '' || !this.tabs.has(path)) return;
+    if (this.session.isDirty(path)) {
+      const save = await confirmDialog(
+        'Unsaved changes',
+        `Save changes to ${path} before closing it?`,
+        'Save',
+        'Cancel',
+      );
+      if (!save) return;
+      if ((await this.session.save(path)) === 'cancelled') return;
+    }
+    const next = this.tabs.close(path, this.editor.path);
+    this.editor.forget(path);
+    if (next === this.editor.path) {
+      this.renderTabs();
+      return;
+    }
+    if (next === '') {
+      this.editor.clear();
+      this.renderTabs();
+      this.renderProblems();
+      this.updateToggles();
+    } else this.openFile(next);
+  }
+
+  /** Go to File…: any .tex/.bib file of the project. */
+  private async quickOpen(): Promise<void> {
+    const files = this.session.paths();
+    if (files.length === 0) {
+      notice('Open a project folder first.');
+      return;
+    }
+    const pick = await pickDialog(
+      'Go to File',
+      files.map((f) => ({ label: f.split('/').pop() ?? f, detail: f, value: f })),
+    );
+    if (pick !== null) this.openFile(pick);
+  }
+
+  /** File ▸ Open File…: one or more files from disk (macOS), each in its project. */
+  private async openFilesFromDisk(): Promise<void> {
+    const picked = await this.shell.pickFiles();
+    if (picked === null) {
+      await this.quickOpen(); // iOS: files come from the open vault folder
+      return;
+    }
+    if (picked.length === 0) return;
+    const reqs = await this.shell.resolveOpenPaths(picked);
+    if (reqs.length === 0) {
+      notice('DevTex opens .tex, .bib, .sty and .cls files.');
+      return;
+    }
+    this.finderQueue = this.finderQueue
+      .then(async () => {
+        for (const req of reqs) await this.openFromFinder(req);
+      })
+      .catch((e: unknown) => notice(errorText(e)));
+    await this.finderQueue;
+  }
+
+  /** Highlight toggle buttons (e.g. Preamble) to match the current state. */
+  private updateToggles(): void {
+    updatePressed($('toolbars'), this.commands);
   }
 
   private jumpTo(file: string, line: number): void {
@@ -493,6 +702,7 @@ export class App {
   /** Scroll Lock: keep the Preview/PDF aligned with the editor's top visible line. */
   private onEditorScroll(): void {
     if (!this.scrollLock || this.scrollFrame !== null) return;
+    if (performance.now() < this.ignoreEditorScrollUntil) return; // our own follow scroll
     this.scrollFrame = requestAnimationFrame(() => {
       this.scrollFrame = null;
       this.syncScroll();
@@ -504,8 +714,29 @@ export class App {
     if (path === '') return;
     const line = this.editor.topLine();
     const view = this.rightView();
+    this.ignoreRightScrollUntil = performance.now() + SCROLL_ECHO_MS;
     if (view === 'pdf') this.pdf.scrollToSource(path, line);
     else if (view === 'preview') this.preview.scrollToLine(path, line);
+  }
+
+  /** Scroll Lock, the other direction: scrolling the Preview/PDF moves the editor. */
+  private onRightScroll(): void {
+    if (!this.scrollLock || this.rightScrollFrame !== null) return;
+    if (performance.now() < this.ignoreRightScrollUntil) return; // our own follow scroll
+    this.rightScrollFrame = requestAnimationFrame(() => {
+      this.rightScrollFrame = null;
+      const view = this.rightView();
+      const src =
+        view === 'pdf'
+          ? this.pdf.topSource()
+          : view === 'preview'
+            ? this.preview.topSource()
+            : null;
+      if (src === null || !this.session.buffers.has(src.file)) return;
+      this.ignoreEditorScrollUntil = performance.now() + SCROLL_ECHO_MS;
+      if (src.file !== this.editor.path) this.openFile(src.file);
+      this.editor.scrollToLine(src.line);
+    });
   }
 
   private renderScrollLock(): void {
@@ -543,16 +774,14 @@ export class App {
   }
 
   private renderTabs(): void {
-    const files =
-      this.root === ''
-        ? this.session.texPaths()
-        : [...new Set([...this.session.projectFiles(this.root), ...this.session.texPaths()])];
+    this.tabs.retain((f) => this.session.buffers.has(f));
     renderTabs(
       $('tabs'),
-      files,
+      this.tabs.list,
       this.editor.path,
       (f) => this.session.isDirty(f),
       (f) => this.openFile(f),
+      (f) => void this.closeFile(f),
     );
   }
 
@@ -596,13 +825,22 @@ export class App {
     });
     groups.push({
       title: 'Config',
-      problems: this.configErrors.map((m) => ({
-        severity: 'warning',
-        file: 'config',
-        line: 0,
-        message: m,
-        source: 'config',
-      })),
+      problems: [
+        ...this.configErrors.map((m) => ({
+          severity: 'warning' as const,
+          file: 'config',
+          line: 0,
+          message: m,
+          source: 'config',
+        })),
+        ...this.profiles.notes.map((m) => ({
+          severity: 'info' as const,
+          file: 'config',
+          line: 0,
+          message: m,
+          source: 'config',
+        })),
+      ],
     });
     const errors = groups.flatMap((g) => g.problems).filter((p) => p.severity === 'error').length;
     $('status-right').textContent = errors > 0 ? `${errors} error(s)` : '';
@@ -877,6 +1115,34 @@ export class App {
     renderToolbars($('toolbars'), this.toolbars, this.commands, this.toolbarsHidden);
   }
 
+  private async openSettings(): Promise<void> {
+    const res = await settingsDialog({
+      theme: this.settings.ui.theme,
+      themeDark: this.settings.ui.themeDark,
+      profiles: await this.profiles.available(),
+      overrides: await this.profiles.overrides(),
+      current: (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(),
+      configDir: await this.shell.configLocation(),
+      openConfigFolder:
+        this.platform.os === 'macos'
+          ? () =>
+              void this.shell
+                .openConfigFolder()
+                .catch((e: unknown) => notice(`Could not open the folder: ${errorText(e)}`))
+          : null,
+    });
+    if (res === null) return;
+    try {
+      await this.profiles.saveOverrides(res.overrides);
+    } catch (e) {
+      notice(`Could not save themes/user.css: ${errorText(e)}`);
+    }
+    this.settings.ui.theme = res.theme;
+    this.settings.ui.themeDark = res.themeDark;
+    await this.shell.writeConfig('settings.jsonc', serializeSettings(this.settings));
+    await this.reloadConfig();
+  }
+
   private setStatus(t: string): void {
     $('status-left').textContent = t;
   }
@@ -902,8 +1168,28 @@ export class App {
       run: () => {
         if (!ed().togglePreamble())
           notice('This file has no preamble (no \\begin{document} after line 2).');
+        this.updateToggles();
       },
+      pressed: () => this.editor.preambleHidden(),
     });
+    c.register({ id: 'file.openFile', title: 'Open File…', run: () => this.openFilesFromDisk() });
+    c.register({ id: 'file.quickOpen', title: 'Go to File…', run: () => this.quickOpen() });
+    c.register({
+      id: 'file.closeFile',
+      title: 'Close File',
+      run: () => this.closeFile(ed().path),
+    });
+    c.register({
+      id: 'view.selectStyleProfile',
+      title: 'Select Style Profile…',
+      run: () => this.selectStyleProfile(),
+    });
+    for (const [suffix, family] of Object.entries(BUILTIN_FAMILIES))
+      c.register({
+        id: `view.styleProfile.${suffix}`,
+        title: `Style Profile: ${family}`,
+        run: () => this.setProfiles(`${family} Light`, `${family} Dark`),
+      });
     c.register({
       id: 'file.save',
       title: 'Save',
@@ -1033,7 +1319,9 @@ export class App {
         localStorage.setItem('devtex.scrollLock', this.scrollLock ? '1' : '0');
         this.renderScrollLock();
         if (this.scrollLock) this.syncScroll();
+        this.updateToggles();
       },
+      pressed: () => this.scrollLock,
     });
     c.register({ id: 'preview.zoomIn', title: 'Zoom Preview In', run: () => this.zoomPreview(1) });
     c.register({
@@ -1096,12 +1384,7 @@ export class App {
     c.register({
       id: 'app.settings',
       title: 'Settings…',
-      run: async () => {
-        const next = await settingsDialog(this.settings, await this.shell.configLocation());
-        if (next === null) return;
-        await this.shell.writeConfig('settings.jsonc', serializeSettings(next));
-        await this.reloadConfig();
-      },
+      run: () => this.openSettings(),
     });
     c.register({
       id: 'app.reloadConfig',

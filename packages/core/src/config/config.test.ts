@@ -7,38 +7,62 @@ import {
   normalizeKey,
   toCodeMirrorKey,
 } from './keymap.js';
-import { DEFAULT_SETTINGS, loadSettings } from './settings.js';
+import { DEFAULT_SETTINGS, loadSettings, serializeSettings } from './settings.js';
 import { loadSyntaxFile } from './syntax.js';
 import { DEFAULT_TOOLBARS, loadToolbars } from './toolbars.js';
 
 describe('settings.jsonc', () => {
   it('missing file gives defaults', () => {
-    expect(loadSettings(null)).toEqual({ value: DEFAULT_SETTINGS, errors: [] });
+    expect(loadSettings(null)).toEqual({ value: DEFAULT_SETTINGS, errors: [], legacy: null });
   });
   it('accepts JSONC with comments and trailing commas, overlaying defaults', () => {
     const r = loadSettings(
-      '// mine\n{ "editor": { "fontSize": 16, }, "colors": { "currentLine": "#223344" } }',
+      '// mine\n{ "editor": { "lineWrapping": false, }, "ui": { "theme": "Paper Light" } }',
     );
     expect(r.errors).toEqual([]);
-    expect(r.value.editor.fontSize).toBe(16);
-    expect(r.value.editor.fontFamily).toBe(DEFAULT_SETTINGS.editor.fontFamily);
-    expect(r.value.colors.currentLine).toBe('#223344');
+    expect(r.value.editor.lineWrapping).toBe(false);
+    expect(r.value.editor.hidePreamble).toBe(true);
+    expect(r.value.ui.theme).toBe('Paper Light');
+    expect(r.value.ui.themeDark).toBe('Default Dark');
   });
   it('invalid JSON never crashes: defaults plus an error', () => {
     const r = loadSettings('{ "editor": ');
     expect(r.value).toEqual(DEFAULT_SETTINGS);
     expect(r.errors.length).toBeGreaterThan(0);
   });
-  it('wrong types, out-of-range values, bad colours and unknown keys fall back individually', () => {
+  it('wrong types, out-of-range values, bad profile names and unknown keys fall back individually', () => {
     const r = loadSettings(
-      '{ "editor": { "fontSize": "big", "lineHeight": 9 }, "colors": { "brokenCode": "url(x)" }, "nope": 1, "preview": { "timingHud": true } }',
+      '{ "editor": { "lineWrapping": "yes" }, "ui": { "zoom": 9, "themeDark": "../x" }, "nope": 1, "preview": { "timingHud": true } }',
     );
-    expect(r.value.editor.fontSize).toBe(DEFAULT_SETTINGS.editor.fontSize);
-    expect(r.value.editor.lineHeight).toBe(DEFAULT_SETTINGS.editor.lineHeight);
-    expect(r.value.colors.brokenCode).toBe(DEFAULT_SETTINGS.colors.brokenCode);
+    expect(r.value.editor.lineWrapping).toBe(DEFAULT_SETTINGS.editor.lineWrapping);
+    expect(r.value.ui.zoom).toBe(1);
+    expect(r.value.ui.themeDark).toBe('Default Dark');
     expect(r.value.preview.timingHud).toBe(true);
     expect(r.errors).toHaveLength(4);
     expect(DEFAULT_SETTINGS.preview.timingHud).toBe(false);
+  });
+  it('pre-1.0.5 colour and font keys are moved out, not reported as errors', () => {
+    const r = loadSettings(
+      '{ "editor": { "fontFamily": "Fira Code", "fontSize": 16, "lineHeight": 1.4, "lineWrapping": false }, "colors": { "currentLine": "#223344", "brokenCode": "url(x);}" } }',
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.value.editor.lineWrapping).toBe(false);
+    expect(r.legacy?.keys).toEqual([
+      'editor.fontFamily',
+      'editor.fontSize',
+      'editor.lineHeight',
+      'colors.currentLine',
+      'colors.brokenCode',
+    ]);
+    expect([...(r.legacy?.vars ?? [])]).toEqual([
+      ['--dt-editor-font', 'Fira Code'],
+      ['--dt-editor-size', '16px'],
+      ['--dt-editor-line-height', '1.4'],
+      ['--dt-editor-active-line', '#223344'],
+    ]);
+    expect(JSON.parse(serializeSettings(r.value).replace(/^\/\/.*\n/, ''))).not.toHaveProperty(
+      'colors',
+    );
   });
 });
 
@@ -155,6 +179,17 @@ describe('syntax/*.json', () => {
     });
     expect(r.errors).toHaveLength(3);
     expect(loadSyntaxFile('x.json', '[]').value).toBeNull();
+  });
+  it('rules may leave out color and fontStyle so a style profile styles them', () => {
+    const r = loadSyntaxFile(
+      'mine.json',
+      '{ "name": "mine", "rules": [ { "match": "\\\\todo", "token": "todo" }, { "match": "x", "token": "x", "color": "#d33" } ] }',
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.value?.rules[0]).not.toHaveProperty('color');
+    expect(r.value?.rules[0]).not.toHaveProperty('fontStyle');
+    expect(r.value?.rules[0]?.token).toBe('todo');
+    expect(r.value?.rules[1]?.color).toBe('#d33');
   });
 });
 

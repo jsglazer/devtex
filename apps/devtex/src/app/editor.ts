@@ -1,7 +1,8 @@
 /**
  * Source editor: one CodeMirror 6 view, one EditorState per open file.
- * Shortcuts come from keymap.json (reserved keys already rejected by core);
- * fonts and highlight colours from settings.jsonc.
+ * Shortcuts come from keymap.json (reserved keys already rejected by core).
+ * Fonts and colours come only from --dt-editor-* CSS variables (the active
+ * style profile), so switching profiles never rebuilds or resets the editor.
  */
 import { closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import {
@@ -78,26 +79,61 @@ export const CM_COMMANDS: Record<string, (v: EditorView) => boolean> = {
   'edit.moveLineDown': moveLineDown,
 };
 
-export function themeFor(s: Settings): Extension {
-  return EditorView.theme({
-    '&': { fontSize: `${s.editor.fontSize}px`, height: '100%' },
-    '.cm-content, .cm-gutter': {
-      fontFamily: s.editor.fontFamily,
-      lineHeight: String(s.editor.lineHeight),
-    },
-    '.cm-activeLine': { backgroundColor: s.colors.currentLine },
-    '&.cm-focused .cm-matchingBracket': { backgroundColor: s.colors.matchingBracket },
-    '.cm-selectionMatch': { backgroundColor: s.colors.selectionMatch },
-    '.cm-dt-broken': { backgroundColor: s.colors.brokenCode },
-    '.cm-dt-env-pair': { backgroundColor: s.colors.environmentPair },
-  });
-}
+/**
+ * The editor's only theme: every visual value is a style-profile variable.
+ * Exported for tests (no literal colours allowed).
+ */
+export const EDITOR_THEME_SPEC: Record<string, Record<string, string>> = {
+  '&': {
+    height: '100%',
+    fontSize: 'var(--dt-editor-size)',
+    color: 'var(--dt-editor-fg)',
+    backgroundColor: 'var(--dt-editor-bg)',
+  },
+  '.cm-content, .cm-gutter': {
+    fontFamily: 'var(--dt-editor-font)',
+    lineHeight: 'var(--dt-editor-line-height)',
+  },
+  '.cm-content': { caretColor: 'var(--dt-editor-cursor)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--dt-editor-cursor)' },
+  '.cm-gutters': {
+    backgroundColor: 'var(--dt-editor-gutter)',
+    color: 'var(--dt-muted)',
+    borderRight: '1px solid var(--dt-border)',
+  },
+  '.cm-activeLineGutter': { backgroundColor: 'var(--dt-editor-active-line)' },
+  '.cm-activeLine': { backgroundColor: 'var(--dt-editor-active-line)' },
+  '&.cm-focused .cm-matchingBracket': { backgroundColor: 'var(--dt-editor-matching-bracket)' },
+  '.cm-selectionMatch': { backgroundColor: 'var(--dt-editor-selection-match)' },
+  '.cm-searchMatch': { backgroundColor: 'var(--dt-editor-selection-match)' },
+  '.cm-dt-broken': { backgroundColor: 'var(--dt-editor-broken)' },
+  '.cm-dt-env-pair': { backgroundColor: 'var(--dt-editor-env-pair)' },
+  '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
+    { backgroundColor: 'var(--dt-editor-selection)' },
+  '.cm-panels': { backgroundColor: 'var(--dt-panel)', color: 'var(--dt-fg)' },
+  '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--dt-border)' },
+  '.cm-tooltip': {
+    backgroundColor: 'var(--dt-panel)',
+    color: 'var(--dt-fg)',
+    border: '1px solid var(--dt-border)',
+  },
+  '.cm-tooltip-autocomplete ul li[aria-selected]': {
+    backgroundColor: 'var(--dt-accent)',
+    color: 'var(--dt-accent-fg)',
+  },
+  '.cm-foldPlaceholder': {
+    backgroundColor: 'var(--dt-panel)',
+    color: 'var(--dt-muted)',
+    border: '1px solid var(--dt-border)',
+  },
+};
+
+export const editorTheme: Extension = EditorView.theme(EDITOR_THEME_SPEC);
 
 export class SourceEditor {
   readonly view: EditorView;
   private readonly states = new Map<string, EditorState>();
   private current = '';
-  private readonly theme = new Compartment();
   private readonly keys = new Compartment();
   private readonly lang = new Compartment();
   private readonly wrap = new Compartment();
@@ -161,7 +197,7 @@ export class SourceEditor {
         ...lintKeymap,
         indentWithTab,
       ]),
-      this.theme.of(themeFor(this.settings)),
+      editorTheme,
       this.wrap.of(this.wrapExtension()),
       EditorView.updateListener.of((u) => {
         if (this.suppress || this.current === '') return;
@@ -190,15 +226,50 @@ export class SourceEditor {
   open(path: string, text: string): void {
     if (this.current !== '') this.states.set(this.current, this.view.state);
     let st = this.states.get(path);
-    if (st === undefined || st.doc.toString() !== text) {
-      st = EditorState.create({ doc: text, extensions: this.extensions() });
-    }
+    const fresh = st === undefined || st.doc.toString() !== text;
+    if (fresh) st = EditorState.create({ doc: text, extensions: this.extensions() });
     this.current = path;
     this.suppress = true;
-    this.view.setState(st);
+    if (st !== undefined) this.view.setState(st);
     // a cached state may predate a word-wrap toggle
     this.view.dispatch({ effects: this.wrap.reconfigure(this.wrapExtension()) });
+    // hide the preamble by default (editor.hidePreamble) the first time a file is shown
+    if (fresh && this.settings.editor.hidePreamble && !this.preambleHidden()) this.togglePreamble();
     this.suppress = false;
+  }
+
+  /** Show nothing (the last tab was closed). */
+  clear(): void {
+    if (this.current !== '') this.states.set(this.current, this.view.state);
+    this.current = '';
+    this.suppress = true;
+    this.view.setState(EditorState.create({ doc: '', extensions: this.extensions() }));
+    this.suppress = false;
+  }
+
+  /** True when the current file's preamble is folded. */
+  preambleHidden(): boolean {
+    const range = preambleRange(this.view.state.doc);
+    if (range === null) return false;
+    let folded = false;
+    foldedRanges(this.view.state).between(range.from, range.to, (from, to) => {
+      if (from === range.from && to === range.to) folded = true;
+    });
+    return folded;
+  }
+
+  /**
+   * Scroll so that fractional `line` (12.5 = half way through line 12) is at
+   * the top of the editor, without moving the cursor (scroll-lock follow).
+   */
+  scrollToLine(line: number): void {
+    const v = this.view;
+    const doc = v.state.doc;
+    const n = Math.max(1, Math.min(Math.floor(line), doc.lines));
+    const block = v.lineBlockAt(doc.line(n).from);
+    const h = block.top + block.height * Math.min(0.999, Math.max(0, line - Math.floor(line)));
+    const scroller = v.scrollDOM;
+    scroller.scrollTop += v.documentTop + h - scroller.getBoundingClientRect().top;
   }
 
   /** Replace a file's text from disk (reload), keeping the cursor line where possible. */
@@ -242,10 +313,7 @@ export class SourceEditor {
   togglePreamble(): boolean {
     const range = preambleRange(this.view.state.doc);
     if (range === null) return false;
-    let folded = false;
-    foldedRanges(this.view.state).between(range.from, range.to, (from, to) => {
-      if (from === range.from && to === range.to) folded = true;
-    });
+    const folded = this.preambleHidden();
     this.view.dispatch({ effects: (folded ? unfoldEffect : foldEffect).of(range) });
     return true;
   }
@@ -279,7 +347,6 @@ export class SourceEditor {
     this.syntax = syntax;
     this.view.dispatch({
       effects: [
-        this.theme.reconfigure(themeFor(settings)),
         this.keys.reconfigure(keymap.of(this.userKeymap())),
         this.lang.reconfigure(latex({ knowledge: this.host.knowledge, syntax })),
         this.wrap.reconfigure(this.wrapExtension()),

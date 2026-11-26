@@ -1,6 +1,7 @@
 //! Small persistent stores in the app's own data/config folders:
 //! - push state: repo path -> blob SHA DevTex last pushed (remote-change check),
-//! - config files: settings.jsonc, keymap.json, toolbars.json, recent.json, syntax/*.json.
+//! - config files: settings.jsonc, keymap.json, toolbars.json, recent.json, syntax/*.json,
+//!   themes/*.css (style profiles and user.css).
 //! - secrets: the GitHub token in the Keychain under `github-papers-token`.
 
 use std::collections::BTreeMap;
@@ -45,20 +46,34 @@ pub const CONFIG_FILES: [&str; 4] = [
     "recent.json",
 ];
 
-/// Resolve a config file name inside the config dir. Only the fixed names and
-/// `syntax/<name>.json` are allowed.
+/// `<stem><ext>` with a non-empty stem of `[A-Za-z0-9_.-]` (plus spaces when
+/// `spaces`), not starting with `.` or a space, and no `..`.
+fn safe_file_name(n: &str, ext: &str, spaces: bool) -> bool {
+    n.ends_with(ext)
+        && n.len() > ext.len()
+        && !n.starts_with('.')
+        && !n.starts_with(' ')
+        && !n.contains("..")
+        && n.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || (spaces && c == ' ')
+        })
+}
+
+/// Resolve a config file name inside the config dir. Only the fixed names,
+/// `syntax/<name>.json` and `themes/<name>.css` are allowed.
 pub fn config_path(dir: &Path, name: &str) -> AppResult<PathBuf> {
     if CONFIG_FILES.contains(&name) {
         return Ok(dir.join(name));
     }
     if let Some(n) = name.strip_prefix("syntax/") {
-        let ok = n.ends_with(".json")
-            && n.len() > 5
-            && n.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-            && !n.contains("..");
-        if ok {
+        if safe_file_name(n, ".json", false) {
             return Ok(dir.join("syntax").join(n));
+        }
+    }
+    if let Some(n) = name.strip_prefix("themes/") {
+        // profile names are shown in menus, so "High Contrast Dark.css" is allowed
+        if safe_file_name(n, ".css", true) {
+            return Ok(dir.join("themes").join(n));
         }
     }
     Err(AppError::ConfigName {
@@ -81,19 +96,30 @@ pub fn write_config(dir: &Path, name: &str, content: &str) -> AppResult<()> {
     StdFileStore.write_atomic(&p, content.as_bytes())
 }
 
-pub fn list_syntax_files(dir: &Path) -> AppResult<Vec<String>> {
-    let sdir = dir.join("syntax");
+/// `<sub>/<name><ext>` for every file in `dir/sub` whose name `config_path` accepts.
+fn list_config_dir(dir: &Path, sub: &str, ext: &str) -> AppResult<Vec<String>> {
+    let sdir = dir.join(sub);
     if !sdir.is_dir() {
         return Ok(vec![]);
     }
     let mut out: Vec<String> = std::fs::read_dir(sdir)?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".json"))
-        .map(|n| format!("syntax/{n}"))
+        .filter(|n| n.ends_with(ext))
+        .map(|n| format!("{sub}/{n}"))
+        .filter(|n| config_path(dir, n).is_ok())
         .collect();
     out.sort();
     Ok(out)
+}
+
+pub fn list_syntax_files(dir: &Path) -> AppResult<Vec<String>> {
+    list_config_dir(dir, "syntax", ".json")
+}
+
+/// Style profiles and user.css: `themes/<name>.css`, sorted.
+pub fn list_theme_files(dir: &Path) -> AppResult<Vec<String>> {
+    list_config_dir(dir, "themes", ".css")
 }
 
 /// Injectable secret storage (Keychain in the app, memory in tests).
@@ -229,6 +255,68 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn theme_paths_allow_profile_names_and_reject_escapes() {
+        let d = tempdir().unwrap();
+        for ok in [
+            "themes/Default Light.css",
+            "themes/High Contrast Dark.css",
+            "themes/user.css",
+            "themes/my_theme-2.css",
+        ] {
+            assert_eq!(
+                config_path(d.path(), ok).unwrap(),
+                d.path().join(ok),
+                "{ok}"
+            );
+        }
+        for bad in [
+            "themes/../settings.jsonc",
+            "themes/../../x.css",
+            "themes/.css",
+            "themes/.hidden.css",
+            "themes/ lead.css",
+            "themes/a/b.css",
+            "themes/x.json",
+            "themes/x.css/",
+            "themes/a\\b.css",
+            "themes/x;y.css",
+            "syntax/with space.json",
+            "theme/x.css",
+        ] {
+            assert!(
+                matches!(config_path(d.path(), bad), Err(AppError::ConfigName { .. })),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn theme_files_are_listed_sorted_and_filtered() {
+        let d = tempdir().unwrap();
+        assert!(list_theme_files(d.path()).unwrap().is_empty());
+        write_config(d.path(), "themes/Paper Light.css", ":root{}").unwrap();
+        write_config(d.path(), "themes/Default Dark.css", ":root{}").unwrap();
+        write_config(d.path(), "themes/user.css", "").unwrap();
+        std::fs::write(d.path().join("themes/.DS_Store"), "x").unwrap();
+        std::fs::write(d.path().join("themes/notes.txt"), "x").unwrap();
+        std::fs::write(d.path().join("themes/.hidden.css"), "x").unwrap();
+        assert_eq!(
+            list_theme_files(d.path()).unwrap(),
+            vec![
+                "themes/Default Dark.css",
+                "themes/Paper Light.css",
+                "themes/user.css"
+            ]
+        );
+        assert_eq!(
+            read_config(d.path(), "themes/Paper Light.css")
+                .unwrap()
+                .as_deref(),
+            Some(":root{}")
+        );
     }
 
     #[test]

@@ -22,6 +22,8 @@ pub enum Item {
     /// Predefined system item (undo, copy, quit …) with its standard shortcut.
     System(SystemItem),
     Separator,
+    /// Nested submenu (e.g. View ▸ Style Profile).
+    Nested(Submenu),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,7 +45,7 @@ pub enum SystemItem {
     Fullscreen,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Submenu {
     pub title: &'static str,
     pub items: Vec<Item>,
@@ -99,8 +101,11 @@ pub fn menu_spec() -> Vec<Submenu> {
                     "Open Recent Project…",
                     Some("CmdOrCtrl+Shift+O"),
                 ),
+                cmd("file.openFile", "Open File…", Some("CmdOrCtrl+Alt+O")),
+                cmd("file.quickOpen", "Go to File…", Some("CmdOrCtrl+P")),
                 cmd("file.save", "Save", Some("CmdOrCtrl+S")),
                 Item::Separator,
+                cmd("file.closeFile", "Close File", Some("CmdOrCtrl+Shift+W")),
                 Item::System(CloseWindow),
             ],
         },
@@ -223,6 +228,18 @@ pub fn menu_spec() -> Vec<Submenu> {
                 ),
                 cmd("view.toggleScrollLock", "Toggle Scroll Lock", None),
                 Item::Separator,
+                Item::Nested(Submenu {
+                    title: "Style Profile",
+                    items: vec![
+                        cmd("view.styleProfile.Default", "Default", None),
+                        cmd("view.styleProfile.Paper", "Paper", None),
+                        cmd("view.styleProfile.HighContrast", "High Contrast", None),
+                        cmd("view.styleProfile.Solarized", "Solarized", None),
+                        Item::Separator,
+                        cmd("view.selectStyleProfile", "Select Style Profile…", None),
+                    ],
+                }),
+                Item::Separator,
                 cmd("view.zoomIn", "Zoom In", Some("CmdOrCtrl+=")),
                 cmd("view.zoomOut", "Zoom Out", Some("CmdOrCtrl+-")),
                 cmd("view.zoomReset", "Actual Size", Some("CmdOrCtrl+0")),
@@ -241,11 +258,27 @@ pub fn menu_spec() -> Vec<Submenu> {
     ]
 }
 
+/// Every item of the menu, nested submenus flattened.
+pub fn all_items() -> Vec<Item> {
+    fn walk(items: Vec<Item>, out: &mut Vec<Item>) {
+        for i in items {
+            match i {
+                Item::Nested(sub) => walk(sub.items, out),
+                other => out.push(other),
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for s in menu_spec() {
+        walk(s.items, &mut out);
+    }
+    out
+}
+
 /// All app command ids in the menu.
 pub fn command_ids() -> BTreeSet<&'static str> {
-    menu_spec()
+    all_items()
         .into_iter()
-        .flat_map(|s| s.items)
         .filter_map(|i| match i {
             Item::Command { id, .. } => Some(id),
             _ => None,
@@ -255,16 +288,29 @@ pub fn command_ids() -> BTreeSet<&'static str> {
 
 #[cfg(target_os = "macos")]
 pub fn build<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu as TSub};
+    use tauri::menu::Menu;
     let menu = Menu::new(app)?;
     for sub in menu_spec() {
-        let s = TSub::new(app, sub.title, true)?;
+        menu.append(&build_submenu(app, sub)?)?;
+    }
+    Ok(menu)
+}
+
+#[cfg(target_os = "macos")]
+fn build_submenu<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    sub: Submenu,
+) -> tauri::Result<tauri::menu::Submenu<R>> {
+    use tauri::menu::{MenuItem, PredefinedMenuItem, Submenu as TSub};
+    let s = TSub::new(app, sub.title, true)?;
+    {
         for item in sub.items {
             match item {
                 Item::Command { id, label, accel } => {
                     s.append(&MenuItem::with_id(app, id, label, true, accel)?)?
                 }
                 Item::Separator => s.append(&PredefinedMenuItem::separator(app)?)?,
+                Item::Nested(inner) => s.append(&build_submenu(app, inner)?)?,
                 Item::System(sys) => {
                     let p = match sys {
                         SystemItem::About => {
@@ -289,9 +335,8 @@ pub fn build<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<taur
                 }
             }
         }
-        menu.append(&s)?;
     }
-    Ok(menu)
+    Ok(s)
 }
 
 #[cfg(test)]
@@ -299,9 +344,8 @@ mod tests {
     use super::*;
 
     fn accels() -> Vec<&'static str> {
-        menu_spec()
+        all_items()
             .into_iter()
-            .flat_map(|s| s.items)
             .filter_map(|i| match i {
                 Item::Command { accel, .. } => accel,
                 _ => None,
@@ -342,9 +386,8 @@ mod tests {
 
     #[test]
     fn system_items_are_present_once() {
-        let systems: Vec<SystemItem> = menu_spec()
+        let systems: Vec<SystemItem> = all_items()
             .into_iter()
-            .flat_map(|s| s.items)
             .filter_map(|i| match i {
                 Item::System(s) => Some(s),
                 _ => None,
@@ -370,12 +413,20 @@ mod tests {
         }
         assert!(command_ids().contains("compile.pdf"));
         assert!(command_ids().contains("file.openRecent"));
+        assert!(command_ids().contains("file.openFile"));
+        assert!(command_ids().contains("file.quickOpen"));
+        assert!(command_ids().contains("file.closeFile"));
         assert!(command_ids().contains("view.togglePreamble"));
         assert!(command_ids().contains("view.toggleWordWrap"));
         assert!(command_ids().contains("view.toggleScrollLock"));
         assert!(command_ids().contains("edit.moveLineUp"));
         assert!(command_ids().contains("edit.moveLineDown"));
         for id in [
+            "view.selectStyleProfile",
+            "view.styleProfile.Default",
+            "view.styleProfile.Paper",
+            "view.styleProfile.HighContrast",
+            "view.styleProfile.Solarized",
             "view.zoomIn",
             "view.zoomOut",
             "view.zoomReset",

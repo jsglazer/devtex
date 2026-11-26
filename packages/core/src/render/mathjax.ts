@@ -36,6 +36,15 @@ function adaptor(): LiteAdaptor {
 
 const MAX_CACHE = 5000;
 
+/**
+ * TeX packages loaded into MathJax. `html` is excluded: its `\href`, `\class`,
+ * `\style` and `\cssId` would turn math into live links / arbitrary styling
+ * (`$\href{https://…}{x}$` navigated the app's only window away).
+ */
+export const MATHJAX_PACKAGES: readonly string[] = AllPackages.filter(
+  (p) => p !== 'bussproofs' && p !== 'html',
+);
+
 export class MathJaxRenderer implements MathRenderer {
   private doc: LiteMathDocument | null = null;
   private macroHash = '';
@@ -47,7 +56,7 @@ export class MathJaxRenderer implements MathRenderer {
     this.macroHash = h;
     adaptor(); // registers the liteDOM HTML handler before creating a document
     const tex = new TeX<LiteNode, LiteText, LiteDocument>({
-      packages: AllPackages.filter((p) => p !== 'bussproofs'),
+      packages: [...MATHJAX_PACKAGES],
       macros: toMathJaxMacros(macros),
       formatError: (_jax: unknown, err: { message: string }) => {
         throw new Error(err.message);

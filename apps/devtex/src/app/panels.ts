@@ -123,9 +123,11 @@ export function renderToolbars(
       pendingSep = false;
       const b = el(
         'button',
-        { title: commands.title(item.command) },
+        { title: commands.title(item.command), 'data-command': item.command },
         item.label ?? commands.title(item.command),
       );
+      const pressed = commands.isPressed(item.command);
+      if (pressed !== undefined) b.setAttribute('aria-pressed', String(pressed));
       b.addEventListener('mousedown', (ev) => ev.preventDefault()); // keep editor focus
       b.addEventListener('click', () => commands.run(item.command));
       div.append(b);
@@ -134,22 +136,42 @@ export function renderToolbars(
   }
 }
 
+/** Refresh toggle buttons (aria-pressed) without rebuilding the toolbars. */
+export function updatePressed(container: HTMLElement, commands: CommandRegistry): void {
+  for (const b of container.querySelectorAll<HTMLElement>('button[data-command]')) {
+    const pressed = commands.isPressed(b.dataset['command'] ?? '');
+    if (pressed !== undefined) b.setAttribute('aria-pressed', String(pressed));
+  }
+}
+
+/** Open-file tabs, each with a close button. */
 export function renderTabs(
   container: HTMLElement,
-  files: string[],
+  files: readonly string[],
   current: string,
   dirty: (f: string) => boolean,
   onPick: (f: string) => void,
+  onClose: (f: string) => void,
 ): void {
   container.replaceChildren(
     ...files.map((f) => {
-      const b = el(
+      const name = el(
         'button',
-        { class: f === current ? 'active' : '', title: f },
+        { class: 'dt-tab-name', title: f },
         `${f.split('/').pop() ?? f}${dirty(f) ? ' ●' : ''}`,
       );
-      b.addEventListener('click', () => onPick(f));
-      return b;
+      name.addEventListener('click', () => onPick(f));
+      const close = el(
+        'button',
+        { class: 'dt-tab-close', title: `Close ${f}`, 'aria-label': `Close ${f}` },
+        '×',
+      );
+      close.addEventListener('mousedown', (ev) => ev.preventDefault());
+      close.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        onClose(f);
+      });
+      return el('span', { class: `dt-tab${f === current ? ' active' : ''}` }, name, close);
     }),
   );
 }

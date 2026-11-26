@@ -4,7 +4,7 @@ import { complete } from './completion.js';
 import { PALETTE, splitCursor } from './completion-data.js';
 import { diagnose } from './diagnostics.js';
 import { collectMacros } from './macros.js';
-import { labelsOf, outlineOf } from './outline.js';
+import { labelsOf, outlineOf, outlineTitle } from './outline.js';
 
 const ctx = (text: string) => {
   const pos = text.indexOf('|');
@@ -174,5 +174,14 @@ garbage @ here
       'more.bib',
       'other.bib',
     ]);
+  });
+});
+
+describe('outline titles (Update003)', () => {
+  it('uses the text branch of \\texorpdfstring and drops \\boldmath', () => {
+    expect(outlineTitle('The \\texorpdfstring{$\\beta$}{beta} model')).toBe('The beta model');
+    expect(outlineTitle('\\boldmath $x$  and\n y')).toBe('$x$ and y');
+    expect(outlineTitle('Plain')).toBe('Plain');
+    expect(outlineOf('a.tex', '\\section{A \\texorpdfstring{$x$}{x}}')[0]?.title).toBe('A x');
   });
 });

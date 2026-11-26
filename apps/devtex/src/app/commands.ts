@@ -9,6 +9,8 @@ export interface CommandDef {
   run: () => void | Promise<void>;
   /** Hidden from palette/toolbars on platforms where it does nothing. */
   available?: () => boolean;
+  /** Toggle commands: true shows the toolbar button highlighted (aria-pressed). */
+  pressed?: () => boolean;
 }
 
 export class CommandRegistry {
@@ -34,6 +36,11 @@ export class CommandRegistry {
   isAvailable(id: string): boolean {
     const d = this.defs.get(id);
     return d !== undefined && d.available?.() !== false;
+  }
+
+  /** Toggle state for toolbar buttons; undefined when the command is not a toggle. */
+  isPressed(id: string): boolean | undefined {
+    return this.defs.get(id)?.pressed?.();
   }
 
   title(id: string): string {

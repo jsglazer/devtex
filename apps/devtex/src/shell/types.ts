@@ -119,7 +119,21 @@ export interface Shell {
   readConfig(name: string): Promise<string | null>;
   writeConfig(name: string, content: string): Promise<void>;
   listSyntaxFiles(): Promise<string[]>;
+  /** Style profiles and user.css: `themes/<name>.css`. */
+  listThemeFiles(): Promise<string[]>;
   configLocation(): Promise<string>;
+  /** Show the config folder in Finder (macOS). */
+  openConfigFolder(): Promise<void>;
+  /** The system light/dark setting, ignoring any appearance forced on the window (null when unknown). */
+  systemAppearance(): Promise<'light' | 'dark' | null>;
+  /** Force the native window appearance (title bar, scroll bars, controls); null follows the system. */
+  setWindowAppearance(appearance: 'light' | 'dark' | null): Promise<void>;
+  /** A style profile or user.css was saved (macOS watcher): `themes/<name>.css` names. */
+  onThemeChanged(cb: (names: string[]) => void): Promise<() => void>;
+  /** File ▸ Open File…: native multi-file picker (macOS); null when unsupported. */
+  pickFiles(): Promise<string[] | null>;
+  /** Open requests (project folder + file) for paths picked in Open File…. */
+  resolveOpenPaths(paths: string[]): Promise<OpenRequest[]>;
   onFsChanged(cb: (paths: string[]) => void): Promise<() => void>;
   onMenu(cb: (command: string) => void): Promise<() => void>;
   /** Finder handed over files/folders; call `takeOpenedPaths` to get them. */

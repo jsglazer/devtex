@@ -1,0 +1,66 @@
+/* devtex: appearance=dark */
+/*
+ * DevTex style profile: Solarized Dark. Ethan Schoonover's Solarized palette; PDF pages are dimmed.
+ * This file is yours to edit: DevTex never overwrites it. Delete it to get the
+ * built-in version back. Set any of the variables below (the stable contract,
+ * see the README), and add any other CSS you like.
+ */
+:root {
+  /* app */
+  --dt-bg: #002b36;
+  --dt-fg: #839496;
+  --dt-muted: #586e75;
+  --dt-border: #0d4a58;
+  --dt-panel: #073642;
+  --dt-accent: #268bd2;
+  --dt-accent-fg: #002b36;
+  --dt-error: #dc322f;
+  --dt-warning: #b58900;
+  --dt-success: #859900;
+  --dt-sync: rgba(181, 137, 0, 0.3);
+  --dt-shadow: rgba(0, 0, 0, 0.6);
+  --dt-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --dt-font-size: 13px;
+  --dt-mono-font: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* editor */
+  --dt-editor-font: 'SF Mono', Menlo, monospace;
+  --dt-editor-size: 14px;
+  --dt-editor-line-height: 1.5;
+  --dt-editor-bg: #002b36;
+  --dt-editor-fg: #839496;
+  --dt-editor-gutter: #073642;
+  --dt-editor-cursor: #93a1a1;
+  --dt-editor-selection: rgba(38, 139, 210, 0.3);
+  --dt-editor-active-line: rgba(7, 54, 66, 0.9);
+  --dt-editor-matching-bracket: rgba(80, 200, 120, 0.35);
+  --dt-editor-selection-match: rgba(255, 210, 0, 0.25);
+  --dt-editor-broken: rgba(230, 60, 60, 0.35);
+  --dt-editor-env-pair: rgba(80, 160, 255, 0.25);
+
+  /* syntax */
+  --dt-syntax-command: #268bd2;
+  --dt-syntax-env: #6c71c4;
+  --dt-syntax-atom: #cb4b16;
+  --dt-syntax-comment: #586e75;
+  --dt-syntax-math: #2aa198;
+  --dt-syntax-number: #d33682;
+  --dt-syntax-bracket: #839496;
+  --dt-syntax-meta: #b58900;
+  --dt-syntax-error: #dc322f;
+
+  /* preview */
+  --dt-preview-font: 'Charter', 'Iowan Old Style', Georgia, serif;
+  --dt-preview-size: 16px;
+  --dt-preview-line-height: 1.55;
+  --dt-preview-heading-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --dt-preview-fg: #839496;
+  --dt-preview-bg: #002b36;
+  --dt-preview-link: #268bd2;
+  --dt-preview-math: currentColor;
+
+  /* pdf (pages are images: only their surroundings follow the profile) */
+  --dt-pdf-bg: #073642;
+  --dt-pdf-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+  --dt-pdf-filter: brightness(0.85);
+}

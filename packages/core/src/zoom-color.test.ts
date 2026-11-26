@@ -41,9 +41,6 @@ describe('colour picker helpers', () => {
     expect(withPickedRgb('red', '#0000ff')).toBe('#0000ff');
     expect(withPickedRgb('#00ff00', 'nonsense')).toBe('#00ff00');
   });
-  it('every default highlight colour is parseable by the picker', () => {
-    for (const c of Object.values(DEFAULT_SETTINGS.colors)) expect(parseCssColor(c)).not.toBeNull();
-  });
 });
 
 describe('Update001 defaults', () => {

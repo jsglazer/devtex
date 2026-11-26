@@ -189,6 +189,8 @@ export class PreviewPane {
   }
 
   private onClick(ev: MouseEvent): void {
+    // links in the preview are inert: never let one navigate the app's window
+    if (isLinkClick(ev.target)) ev.preventDefault();
     let t = ev.target instanceof Element ? ev.target : null;
     const chain: { file?: string | null; line?: string | null }[] = [];
     while (t && t !== this.opts.container) {
@@ -249,9 +251,28 @@ export class PreviewPane {
     c.scrollTop = Math.max(0, top + frac * block.offsetHeight - 16);
   }
 
-  /** Preview text zoom (1 = 100%). */
+  /**
+   * Scroll Lock, Preview -> editor: the source position at the top of the
+   * pane (the inverse of scrollToLine), or null before anything rendered.
+   */
+  topSource(): { file: string; line: number } | null {
+    const c = this.opts.container;
+    const edge = c.getBoundingClientRect().top + 16;
+    for (const span of this.spans) {
+      const block = this.blocks.get(span.id);
+      if (!block || block.offsetHeight === 0) continue;
+      const r = block.getBoundingClientRect();
+      if (r.bottom <= edge) continue;
+      const lines = Math.max(1, span.endLine - span.startLine + 1);
+      const frac = Math.min(1, Math.max(0, (edge - r.top) / Math.max(1, r.height)));
+      return { file: span.file, line: span.startLine + frac * lines };
+    }
+    return null;
+  }
+
+  /** Preview text zoom (1 = 100%), relative to the profile's --dt-preview-size. */
   setZoom(z: number): void {
-    this.opts.container.style.fontSize = `${Math.round(16 * z * 10) / 10}px`;
+    this.opts.container.style.fontSize = z === 1 ? '' : `calc(var(--dt-preview-size) * ${z})`;
   }
 
   setDebounce(ms: number): void {
@@ -272,4 +293,10 @@ function shiftLines(node: HTMLElement, delta: number): void {
   for (const el of node.querySelectorAll<HTMLElement>('.dt-unsupported-line')) {
     el.textContent = (el.textContent ?? '').replace(/\d+/, (d) => String(Number(d) + delta));
   }
+}
+
+/** True when a click landed on (or inside) an `<a>` element, HTML or SVG. */
+export function isLinkClick(target: EventTarget | null): boolean {
+  const t = target as { closest?: (sel: string) => unknown } | null;
+  return typeof t?.closest === 'function' && t.closest('a') !== null;
 }
