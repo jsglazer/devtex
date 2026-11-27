@@ -69,7 +69,7 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
   - `syntax/*.json`: custom highlighting rules for LaTeX or embedded code. A rule may leave out `color` and `fontStyle`; it then only gets the class `.cm-dt-syn-<name>-<token>`, which a style profile can style.
   - `themes/user.css`: your CSS on top of any style profile, in DevTex only (see **Style profiles** below).
 - Invalid config never crashes the app: defaults are used and the problems appear in the Problems panel.
-- The Settings dialog has the **Follow shared style** switch and picks the light and dark style profiles. It has quick controls for the editor font, font size and highlight colours. It shows the config folder's path (selectable) with an **Open Config Folder** button (macOS).
+- The Settings dialog has the **Follow shared style** switch (on the Style profile heading line) and picks the light and dark style profiles: the Light list shows only light profiles and the Dark list only dark ones. A profile you pick shows in the main window straight away; **Save** keeps it and **Cancel** puts the saved style back. It has quick controls for the editor font, font size and highlight colours. It shows the config folder's path (selectable) with an **Open Config Folder** button (macOS).
 - Optional debug HUD (`preview.timingHud`) shows parse/render/typeset ms per edit.
 
 **iOS / iPadOS**
@@ -86,6 +86,7 @@ DevTex's colours and fonts come from [DevStyle](https://github.com/jsglazer/devs
 
 - **Shared folder (macOS):** `~/Library/Group Containers/PWGXN26URQ.com.jsglazer.devstyle/DevStyle/`. It holds `devstyle.json`, which names the light and dark profile every app follows, and `profiles/<id>.css`. On first launch DevTex copies DevStyle's built-in profiles there: Default, Paper, High Contrast and Solarized, each Light and Dark. It never overwrites a file that is already there, so you can edit them. The folder's path is shown in Settings.
 - **Follow shared style / Use my own:** with `ui.followSharedStyle` on (the default), DevTex shows the pair named in `devstyle.json`. Picking a profile in Settings, View ▸ Style Profile or **Select Style Profile…** then changes the style for every app that follows it, and the dialog says so. Turn the switch off to give DevTex its own pair (`ui.theme` / `ui.themeDark`, DevStyle profile ids such as `paper-light`) without touching other apps.
+- **View ▸ Style Profile** lists the built-in families (Default, Paper, High Contrast, Solarized) and puts a check mark next to the one showing; with a custom profile none is checked.
 - **Light and dark:** DevTex switches between the two profiles live when macOS changes appearance. Changes to `devstyle.json` or to the active profile, made by another app or by hand, apply within a moment. File ▸ Reload Config Files reloads them as well.
 - **Window appearance:** the profile's header (`appearance=light|dark`) sets the native window appearance (title bar, scroll bars, form controls), for example when a dark profile is used in light mode.
 - **Problems:** a missing or broken profile, or a bad `devstyle.json`, falls back to Default and is reported in Problems.
