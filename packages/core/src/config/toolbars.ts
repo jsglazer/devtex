@@ -32,7 +32,7 @@ export const DEFAULT_TOOLBARS: Toolbar[] = [
     title: 'Main',
     visible: true,
     items: [
-      { command: 'file.openProject', label: 'Open' },
+      { command: 'file.openFile', label: 'Open' },
       { command: 'file.save', label: 'Save' },
       { command: 'compile.pdf', label: 'Compile' },
       SEP,

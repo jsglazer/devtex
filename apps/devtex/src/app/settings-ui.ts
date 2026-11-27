@@ -53,6 +53,8 @@ export interface SettingsDialogInput {
   configDir: string;
   /** Null when the platform cannot open the folder (iOS). */
   openConfigFolder: (() => void) | null;
+  /** Show a light/dark pair in the main window while the dialog is open (nothing is saved). */
+  preview?: (light: string, dark: string) => void;
 }
 
 export interface SettingsDialogResult {
@@ -83,22 +85,25 @@ export function nextOverrides(
 }
 
 /**
- * Options for one slot: profiles of that appearance first, then the others
- * (allowed, e.g. a dark profile in light mode), plus the current value if it
- * is not in the list. Pure, so it is unit-tested.
+ * Options for one slot: only the profiles of that appearance, plus the current
+ * value if it is not among them (a missing id, or an other-appearance profile
+ * set by hand in settings.jsonc / devstyle.json). Pure, so it is unit-tested.
  */
 export function profileOptions(
   profiles: readonly ProfileInfo[],
   slot: 'light' | 'dark',
   value: string,
 ): { value: string; label: string }[] {
-  const mine = profiles.filter((p) => p.appearance === slot);
-  const others = profiles.filter((p) => p.appearance !== slot);
-  const out = [...mine, ...others].map((p) => ({
-    value: p.id,
-    label: p.appearance === slot ? p.name : `${p.name} (${p.appearance})`,
-  }));
-  if (!out.some((o) => o.value === value)) out.push({ value, label: `${value} (missing)` });
+  const out = profiles
+    .filter((p) => p.appearance === slot)
+    .map((p) => ({ value: p.id, label: p.name }));
+  if (!out.some((o) => o.value === value)) {
+    const p = profiles.find((x) => x.id === value);
+    out.push({
+      value,
+      label: p === undefined ? `${value} (missing)` : `${p.name} (${p.appearance})`,
+    });
+  }
   return out;
 }
 
@@ -136,22 +141,25 @@ export function settingsDialog(input: SettingsDialogInput): Promise<SettingsDial
         : 'Using DevTex’s own profiles: other apps are not affected.';
     };
     showHint();
+    const preview = (): void => input.preview?.(light.value, dark.value);
     followBox.addEventListener('change', () => {
       follow = followBox.checked;
       const v = initial(follow);
       light.fill(v.light);
       dark.fill(v.dark);
       showHint();
+      preview();
     });
-    const followRow = shareable
+    light.addEventListener('change', preview);
+    dark.addEventListener('change', preview);
+    const followToggle = shareable
       ? [
           el(
             'label',
-            { class: 'dt-field row' },
+            { class: 'dt-follow' },
             followBox,
             el('span', {}, 'Follow shared style (all DevStyle apps)'),
           ),
-          followHint,
         ]
       : [];
     const fields: { variable: string; initial: string; input: HTMLInputElement }[] = [];
@@ -245,19 +253,24 @@ export function settingsDialog(input: SettingsDialogInput): Promise<SettingsDial
       const openFolder = input.openConfigFolder;
       openBtn.addEventListener('click', () => openFolder());
     }
-    const overlay = el('div', { class: 'dt-modal-overlay' });
+    const overlay = el('div', { class: 'dt-modal-overlay dt-settings-overlay' });
     const save = el('button', { class: 'primary' }, 'Save');
     const cancel = el('button', {}, 'Cancel');
     const box = el(
       'div',
-      { class: 'dt-modal' },
+      { class: 'dt-modal dt-settings' },
       el('h3', {}, 'Settings'),
       el(
         'div',
-        { class: 'dt-muted' },
-        'Style profile (DevStyle; follows the system light/dark setting)',
+        { class: 'dt-settings-heading' },
+        el(
+          'span',
+          { class: 'dt-muted' },
+          'Style profile (DevStyle; follows the system light/dark setting)',
+        ),
+        ...followToggle,
       ),
-      ...followRow,
+      ...(shareable ? [followHint] : []),
       el(
         'label',
         { class: 'dt-field row' },

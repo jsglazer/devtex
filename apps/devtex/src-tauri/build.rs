@@ -31,6 +31,7 @@ const COMMANDS: &[&str] = &[
     "system_appearance",
     "resolve_open_paths",
     "take_opened_paths",
+    "set_style_profile_check",
 ];
 
 fn main() {

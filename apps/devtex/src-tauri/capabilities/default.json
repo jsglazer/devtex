@@ -42,6 +42,7 @@
     "allow-open-config-folder",
     "allow-system-appearance",
     "allow-resolve-open-paths",
-    "allow-take-opened-paths"
+    "allow-take-opened-paths",
+    "allow-set-style-profile-check"
   ]
 }

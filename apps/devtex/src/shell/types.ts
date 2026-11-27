@@ -148,6 +148,8 @@ export interface Shell {
   setWindowAppearance(appearance: 'light' | 'dark' | null): Promise<void>;
   /** user.css was saved (macOS watcher): `themes/<name>.css` names. */
   onThemeChanged(cb: (names: string[]) => void): Promise<() => void>;
+  /** Check View ▸ Style Profile ▸ `family` (e.g. "Paper"); "" unchecks all. No-op without an app menu. */
+  setStyleProfileCheck(family: string): Promise<void>;
   /** File ▸ Open File…: native multi-file picker (macOS); null when unsupported. */
   pickFiles(): Promise<string[] | null>;
   /** Open requests (project folder + file) for paths picked in Open File…. */

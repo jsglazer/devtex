@@ -326,7 +326,7 @@ export class App {
     this.setStatus(
       this.platform.os === 'ios'
         ? 'Open your vault folder to begin.'
-        : 'Open a project folder (File ▸ Open Project Folder…, ⌘O).',
+        : 'Open a file (⌘O) or a project folder (File ▸ Open Project Folder…, ⌥⌘O).',
     );
     this.renderProblems();
     if (this.platform.os === 'ios') {
@@ -437,7 +437,25 @@ export class App {
     const dark = await this.systemDark();
     if (seq !== this.profileSeq) return;
     this.lastSystemDark = dark;
-    await this.profiles.apply(this.settings.ui, dark);
+    const active = await this.profiles.apply(this.settings.ui, dark);
+    if (seq !== this.profileSeq) return;
+    // View ▸ Style Profile: check the family of the profile now showing
+    const family =
+      Object.entries(BUILTIN_FAMILIES).find(
+        ([, f]) => f.light === active.id || f.dark === active.id,
+      )?.[0] ?? '';
+    void this.shell.setStyleProfileCheck(family).catch(() => undefined);
+  }
+
+  /** Show a light/dark pair without saving it (Settings live preview). */
+  private async previewProfile(light: string, dark: string): Promise<void> {
+    const seq = ++this.profileSeq;
+    const systemDark = await this.systemDark();
+    if (seq !== this.profileSeq) return;
+    await this.profiles.apply(
+      { followSharedStyle: false, theme: light, themeDark: dark },
+      systemDark,
+    );
   }
 
   /** Live light/dark switching, hot reload of profiles (DevStyle folder and user.css), and the forced-appearance poll. */
@@ -651,7 +669,8 @@ export class App {
   private async openFilesFromDisk(): Promise<void> {
     const picked = await this.shell.pickFiles();
     if (picked === null) {
-      await this.quickOpen(); // iOS: files come from the open vault folder
+      // iOS: files come from the open vault folder, so pick that first
+      await (this.root === '' ? this.openProject() : this.quickOpen());
       return;
     }
     if (picked.length === 0) return;
@@ -1177,8 +1196,13 @@ export class App {
                 .openConfigFolder()
                 .catch((e: unknown) => notice(`Could not open the folder: ${errorText(e)}`))
           : null,
+      preview: (light, dark) =>
+        void this.previewProfile(light, dark).catch((e: unknown) => notice(errorText(e))),
     });
-    if (res === null) return;
+    if (res === null) {
+      await this.reapplyProfile(); // undo any live preview
+      return;
+    }
     try {
       await this.profiles.saveOverrides(res.overrides);
     } catch (e) {

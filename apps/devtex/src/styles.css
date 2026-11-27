@@ -574,6 +574,31 @@
   .dt-modal h3 {
     margin: 0 0 10px;
   }
+  /* Settings: tall enough that every control shows without scrolling */
+  .dt-settings-overlay {
+    padding-top: 3vh;
+  }
+  .dt-modal.dt-settings {
+    width: min(680px, 94vw);
+    max-height: 94vh;
+  }
+  .dt-settings-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .dt-settings-heading .dt-follow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .dt-modal .dt-follow input {
+    width: auto;
+    margin: 0;
+  }
   .dt-modal-buttons {
     display: flex;
     justify-content: flex-end;

@@ -147,6 +147,10 @@ export const tauriShell: Shell = {
     }
   },
   onThemeChanged: (cb) => listen<string[]>('devtex://theme-changed', (e) => cb(e.payload)),
+  setStyleProfileCheck: async (family) => {
+    if ((await platformInfo()).os === 'macos')
+      await call<void>('set_style_profile_check', { family });
+  },
   pickFiles: async () => {
     if ((await platformInfo()).os !== 'macos') return null;
     const r = await open({

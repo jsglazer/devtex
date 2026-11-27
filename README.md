@@ -18,7 +18,7 @@ Built with Tauri 2 (Rust + TypeScript), CodeMirror 6, unified-latex, MathJax 3 a
 - Move Line Up/Down (Edit menu, default ⌃⌥↑/⌃⌥↓, remappable in `keymap.json`) moves the current line or selected lines.
 - Word wrap on/off: View ▸ Toggle Word Wrap (⌥⌘W), saved to `settings.jsonc`.
 - Show/Hide Preamble (toolbar **Preamble**, View ▸ Show/Hide Preamble, ⌥⌘P) folds everything before `\begin{document}` into one line. The preamble is hidden by default when a file opens (`editor.hidePreamble`), and the **Preamble** button is highlighted while it is hidden.
-- Tabs show only the files you opened, each with a close button (×, File ▸ Close File, ⇧⌘W). Opening a folder shows its main document; File ▸ Go to File… (⌘P) opens any other `.tex`/`.bib` file of the project; File ▸ Open File… (⌥⌘O, macOS) opens one or more files from disk, each in its own project. Every project file is still loaded, so the preview, labels and citations see the whole project.
+- Tabs show only the files you opened, each with a close button (×, File ▸ Close File, ⇧⌘W). Opening a folder shows its main document; File ▸ Go to File… (⌘P) opens any other `.tex`/`.bib` file of the project; File ▸ Open File… (⌘O and the Open toolbar button, macOS; File ▸ Open Project Folder… is ⌥⌘O) opens one or more files from disk, each in its own project. Every project file is still loaded, so the preview, labels and citations see the whole project.
 
 **Instant HTML preview (Live)**
 - Renders prose, sectioning (math in headings too, including `\texorpdfstring` and `\boldmath`), lists, emphasis, citations/refs, `tabular`, inline and display math (`equation`, `align`, …), theorem-like environments and floats.

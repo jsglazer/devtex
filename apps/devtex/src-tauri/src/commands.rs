@@ -421,6 +421,25 @@ pub async fn open_config_folder(app: AppHandle) -> AppResult<()> {
     }
 }
 
+/// Check the View ▸ Style Profile item for `family` (e.g. "Paper") and
+/// uncheck the others; an unknown family (a custom profile) unchecks all.
+/// A no-op where there is no app menu (iOS).
+#[tauri::command]
+pub async fn set_style_profile_check(app: AppHandle, family: String) -> AppResult<()> {
+    #[cfg(target_os = "macos")]
+    crate::menu::set_checked_choice(
+        &app,
+        crate::menu::STYLE_PROFILE_PREFIX,
+        &format!("{}{family}", crate::menu::STYLE_PROFILE_PREFIX),
+    )
+    .map_err(|e| AppError::Io {
+        message: format!("menu: {e}"),
+    })?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, family);
+    Ok(())
+}
+
 /// The system's light/dark setting, independent of any appearance DevTex
 /// forced on its window: "dark" or "light" on macOS, null elsewhere.
 #[tauri::command]
@@ -490,7 +509,7 @@ pub fn platform() -> PlatformInfo {
 }
 
 /// Commands registered with the app (also the ACL list in build.rs).
-pub const COMMANDS: [&str; 30] = [
+pub const COMMANDS: [&str; 31] = [
     "platform",
     "open_project",
     "list_files",
@@ -521,6 +540,7 @@ pub const COMMANDS: [&str; 30] = [
     "system_appearance",
     "resolve_open_paths",
     "take_opened_paths",
+    "set_style_profile_check",
 ];
 
 // ---------- Finder open requests (macOS) ----------

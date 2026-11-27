@@ -19,6 +19,13 @@ pub enum Item {
         label: &'static str,
         accel: Option<&'static str>,
     },
+    /// App command shown with a check mark when it is the active choice of its
+    /// group (View ▸ Style Profile); the frontend sets which one via
+    /// [`set_checked_choice`].
+    Choice {
+        id: &'static str,
+        label: &'static str,
+    },
     /// Predefined system item (undo, copy, quit …) with its standard shortcut.
     System(SystemItem),
     Separator,
@@ -71,6 +78,13 @@ fn cmd(id: &'static str, label: &'static str, accel: Option<&'static str>) -> It
     Item::Command { id, label, accel }
 }
 
+fn choice(id: &'static str, label: &'static str) -> Item {
+    Item::Choice { id, label }
+}
+
+/// Prefix shared by the View ▸ Style Profile choices.
+pub const STYLE_PROFILE_PREFIX: &str = "view.styleProfile.";
+
 pub fn menu_spec() -> Vec<Submenu> {
     use SystemItem::*;
     vec![
@@ -94,14 +108,14 @@ pub fn menu_spec() -> Vec<Submenu> {
                 cmd(
                     "file.openProject",
                     "Open Project Folder…",
-                    Some("CmdOrCtrl+O"),
+                    Some("CmdOrCtrl+Alt+O"),
                 ),
                 cmd(
                     "file.openRecent",
                     "Open Recent Project…",
                     Some("CmdOrCtrl+Shift+O"),
                 ),
-                cmd("file.openFile", "Open File…", Some("CmdOrCtrl+Alt+O")),
+                cmd("file.openFile", "Open File…", Some("CmdOrCtrl+O")),
                 cmd("file.quickOpen", "Go to File…", Some("CmdOrCtrl+P")),
                 cmd("file.save", "Save", Some("CmdOrCtrl+S")),
                 Item::Separator,
@@ -231,10 +245,10 @@ pub fn menu_spec() -> Vec<Submenu> {
                 Item::Nested(Submenu {
                     title: "Style Profile",
                     items: vec![
-                        cmd("view.styleProfile.Default", "Default", None),
-                        cmd("view.styleProfile.Paper", "Paper", None),
-                        cmd("view.styleProfile.HighContrast", "High Contrast", None),
-                        cmd("view.styleProfile.Solarized", "Solarized", None),
+                        choice("view.styleProfile.Default", "Default"),
+                        choice("view.styleProfile.Paper", "Paper"),
+                        choice("view.styleProfile.HighContrast", "High Contrast"),
+                        choice("view.styleProfile.Solarized", "Solarized"),
                         Item::Separator,
                         cmd("view.selectStyleProfile", "Select Style Profile…", None),
                     ],
@@ -280,7 +294,7 @@ pub fn command_ids() -> BTreeSet<&'static str> {
     all_items()
         .into_iter()
         .filter_map(|i| match i {
-            Item::Command { id, .. } => Some(id),
+            Item::Command { id, .. } | Item::Choice { id, .. } => Some(id),
             _ => None,
         })
         .collect()
@@ -301,7 +315,7 @@ fn build_submenu<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     sub: Submenu,
 ) -> tauri::Result<tauri::menu::Submenu<R>> {
-    use tauri::menu::{MenuItem, PredefinedMenuItem, Submenu as TSub};
+    use tauri::menu::{CheckMenuItem, MenuItem, PredefinedMenuItem, Submenu as TSub};
     let s = TSub::new(app, sub.title, true)?;
     {
         for item in sub.items {
@@ -309,6 +323,14 @@ fn build_submenu<R: tauri::Runtime>(
                 Item::Command { id, label, accel } => {
                     s.append(&MenuItem::with_id(app, id, label, true, accel)?)?
                 }
+                Item::Choice { id, label } => s.append(&CheckMenuItem::with_id(
+                    app,
+                    id,
+                    label,
+                    true,
+                    false,
+                    None::<&str>,
+                )?)?,
                 Item::Separator => s.append(&PredefinedMenuItem::separator(app)?)?,
                 Item::Nested(inner) => s.append(&build_submenu(app, inner)?)?,
                 Item::System(sys) => {
@@ -337,6 +359,38 @@ fn build_submenu<R: tauri::Runtime>(
         }
     }
     Ok(s)
+}
+
+/// Check the choice `id` of its group and uncheck the others in that group
+/// (the group is every [`Item::Choice`] sharing `prefix`). An `id` that is
+/// not in the menu (e.g. a custom profile) leaves every choice unchecked.
+#[cfg(target_os = "macos")]
+pub fn set_checked_choice<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    prefix: &str,
+    id: &str,
+) -> tauri::Result<()> {
+    use tauri::menu::MenuItemKind;
+    fn walk<R: tauri::Runtime>(
+        items: Vec<MenuItemKind<R>>,
+        prefix: &str,
+        id: &str,
+    ) -> tauri::Result<()> {
+        for item in items {
+            match item {
+                MenuItemKind::Submenu(s) => walk(s.items()?, prefix, id)?,
+                MenuItemKind::Check(c) if c.id().as_ref().starts_with(prefix) => {
+                    c.set_checked(c.id().as_ref() == id)?
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    match app.menu() {
+        Some(menu) => walk(menu.items()?, prefix, id),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -404,6 +458,19 @@ mod tests {
         ] {
             assert_eq!(systems.iter().filter(|x| **x == s).count(), 1, "{s:?}");
         }
+    }
+
+    #[test]
+    fn style_profile_families_are_check_choices() {
+        let choices: Vec<&str> = all_items()
+            .into_iter()
+            .filter_map(|i| match i {
+                Item::Choice { id, .. } => Some(id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(choices.len(), 4);
+        assert!(choices.iter().all(|c| c.starts_with(STYLE_PROFILE_PREFIX)));
     }
 
     #[test]

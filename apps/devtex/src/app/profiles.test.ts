@@ -453,8 +453,11 @@ describe('Settings dialog profile lists', () => {
     { id: 'paper-dark', name: 'Paper Dark', appearance: 'dark', pair: 'paper-light' },
     { id: 'paper-light', name: 'Paper Light', appearance: 'light', pair: 'paper-dark' },
   ];
-  it('lists the slot’s own appearance first and keeps a missing current value', () => {
+  it('lists only the slot’s own appearance and keeps an off-list current value', () => {
     expect(profileOptions(profiles, 'light', 'paper-light')).toEqual([
+      { value: 'paper-light', label: 'Paper Light' },
+    ]);
+    expect(profileOptions(profiles, 'light', 'paper-dark')).toEqual([
       { value: 'paper-light', label: 'Paper Light' },
       { value: 'paper-dark', label: 'Paper Dark (dark)' },
     ]);

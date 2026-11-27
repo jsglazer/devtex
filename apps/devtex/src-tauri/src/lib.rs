@@ -128,6 +128,7 @@ pub fn run() {
             commands::system_appearance,
             commands::resolve_open_paths,
             commands::take_opened_paths,
+            commands::set_style_profile_check,
         ])
         .build(tauri::generate_context!());
     let app = match result {
